@@ -1,0 +1,19 @@
+# debug
+5 3 - $bla
+&bla &bla * $bla
+&bla &bla / $bla
+#$bla (5 - 3) # bla = 2
+#$bla (&bla * &bla) # bla = 4
+#$bla (&bla / &bla) # bla = 1
+
+if &bla 1 == do
+    10 print
+#    print(10) #prints 10
+end
+
+if &bla 0 == do
+    20 print
+end
+#if (&bla == 0) {
+#    print(20) #does not print
+#}

@@ -1,0 +1,18 @@
+1 $n
+0 $done
+20 $up_to
+while &done 0 == do
+    1 $index
+    1 $count
+    while &index &up_to < do
+        if &n &index % 0 == do
+            &count 1 + $count
+        end
+        &index 1 + $index
+    end
+    if &count &up_to > do
+        &n print
+        1 $done
+    end
+    &n 1 + $n
+end

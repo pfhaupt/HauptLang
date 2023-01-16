@@ -1,0 +1,13 @@
+100 $limit
+0 $number
+0 $sum_square
+0 $sum_number
+while &number &limit 1 + < do
+    &sum_square &number &number * + $sum_square
+    &sum_number &number + $sum_number
+    &number 1 + $number
+end
+&sum_number &sum_number * $sum_number
+&sum_square print
+&sum_number print
+&sum_number &sum_square - print

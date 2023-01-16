@@ -1,0 +1,25 @@
+1 $n
+0 $max
+0 $best
+
+1 $index
+while &index 1000000 < do
+    &index $n
+    1 $chain
+    while &n 1 != do
+        if &n 2 % 0 == do
+            &n 2 / $n
+        else
+            &n 3 * 1 + $n
+        end
+        &chain 1 + $chain
+    end
+    if &chain &max > do
+        &chain $max
+        &index $best
+    end
+    &index 1 + $index
+end
+
+&chain print
+&best print

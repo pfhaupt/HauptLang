@@ -1,0 +1,14 @@
+0 $result
+1 $a
+0 $b
+1 $fib
+while &fib 4000000 < do
+    &a &b + $fib
+    &b $a
+    &fib $b
+    if &fib 2 % 0 == do
+        &result &fib + $result
+    end
+end
+
+&result print

@@ -1,0 +1,6 @@
+0 $index
+100 $limit
+while &index &limit < do
+    &index print
+    &index 1 + $index
+end

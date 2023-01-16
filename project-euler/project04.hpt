@@ -1,0 +1,33 @@
+100 $n1
+100 $n2
+
+0 $best
+
+while &n1 1000 < do
+    100 $n2
+    while &n2 1000 < do
+#       while (n != 0) {
+#        remainder = n % 10;
+#        reversed = reversed * 10 + remainder;
+#        n /= 10;
+#        }
+        &n1 &n2 * $n
+        &n $tmp
+        0 $reversed
+        0 $remainder
+        while &tmp 0 != do
+            &tmp 10 % $remainder
+            &reversed 10 * &remainder + $reversed
+            &tmp 10 / $tmp
+        end
+        if &reversed &n == do
+            if &reversed &best > do
+                &reversed $best
+            end
+        end
+        &n2 1 + $n2
+    end
+    &n1 1 + $n1
+end
+
+&best print

@@ -10,10 +10,10 @@ This is a project I have been working on for a while.
 - [ ] Self hosting
 
 ## Content
-### main.py
+### haupt.py
 This is the heart of the language.
 Usage:
-> main.py <input.hpt> [-s | -c | -d]
+> haupt.py <input.hpt> [-s | -c | -d]
 #### Flags
 -s: Interpret the code in Python
 
@@ -39,7 +39,7 @@ So make sure you have both of those tools available in your %PATH%.
 42 $var
 &var print
 
-> main.py test.hpt -c
+> haupt.py test.hpt -c
 [compilation logs]
 [generated output.exe]
 

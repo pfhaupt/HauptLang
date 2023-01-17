@@ -1,5 +1,6 @@
 *.exe
 *.asm
 *.obj
+*.ps1
 /ASM-experiments/
 /.idea/

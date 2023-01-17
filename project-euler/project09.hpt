@@ -27,7 +27,6 @@ while &running do
         end
         &a 1 + $a
     end
-    &running print
 end
 
 &result print

@@ -21,5 +21,5 @@ while &index 1000000 < do
     &index 1 + $index
 end
 
-&chain print
+&max print
 &best print

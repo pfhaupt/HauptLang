@@ -148,6 +148,7 @@ def evaluate_static_equations(instructions):
                         push_op += 1
                     else:
                         math_op += 1
+                # print(push_op, math_op)
                 if push_op != math_op + 1:
                     # Because all Math OP take pop 2 values and pop 1 value
                     # You need 1 more PUSH than MATH op
@@ -157,41 +158,46 @@ def evaluate_static_equations(instructions):
                         new_code.append(s)
                     instr_stack = []
                 else:
-                    stack = []
-                    for s in instr_stack:
-                        stack_op = s[3]
-                        # print(f"  {s}")
-                        if stack_op[0] == OpSet.PUSH:
-                            stack.append(stack_op[1])
-                        elif stack_op[0] == OpSet.ADD:
-                            a = stack.pop()
-                            b = stack.pop()
-                            stack.append(a + b)
-                        elif stack_op[0] == OpSet.SUB:
-                            a = stack.pop()
-                            b = stack.pop()
-                            stack.append(b - a)
-                        elif stack_op[0] == OpSet.MUL:
-                            a = stack.pop()
-                            b = stack.pop()
-                            stack.append(a * b)
-                        elif stack_op[0] == OpSet.DIV:
-                            a = stack.pop()
-                            b = stack.pop()
-                            stack.append(int(b / a))
-                        elif stack_op[0] == OpSet.MOD:
-                            a = stack.pop()
-                            b = stack.pop()
-                            stack.append(int(b % a))
-                    result = stack.pop()
-                    # print("Result: " + str(result))
-                    last_instr = instr_stack[-1]
-                    # print(f"Last instruction: {last_instr}")
-                    new_instr = (last_instr[0], last_instr[1], last_instr[2], (OpSet.PUSH, result))
-                    instr_stack = []
-                    # print(f"Sequence breaker: {op}")
-                    # print("*********************")
-                    new_code.append(new_instr)
+                    try:
+                        stack = []
+                        for s in instr_stack:
+                            stack_op = s[3]
+                            # print(f"  {s}")
+                            if stack_op[0] == OpSet.PUSH:
+                                stack.append(stack_op[1])
+                            elif stack_op[0] == OpSet.ADD:
+                                a = stack.pop()
+                                b = stack.pop()
+                                stack.append(a + b)
+                            elif stack_op[0] == OpSet.SUB:
+                                a = stack.pop()
+                                b = stack.pop()
+                                stack.append(b - a)
+                            elif stack_op[0] == OpSet.MUL:
+                                a = stack.pop()
+                                b = stack.pop()
+                                stack.append(a * b)
+                            elif stack_op[0] == OpSet.DIV:
+                                a = stack.pop()
+                                b = stack.pop()
+                                stack.append(int(b / a))
+                            elif stack_op[0] == OpSet.MOD:
+                                a = stack.pop()
+                                b = stack.pop()
+                                stack.append(int(b % a))
+                        result = stack.pop()
+                        # print("Result: " + str(result))
+                        last_instr = instr_stack[-1]
+                        # print(f"Last instruction: {last_instr}")
+                        new_instr = (last_instr[0], last_instr[1], last_instr[2], (OpSet.PUSH, result))
+                        instr_stack = []
+                        # print(f"Sequence breaker: {op}")
+                        # print("*********************")
+                        new_code.append(new_instr)
+                    except IndexError:
+                        for s in instr_stack:
+                            new_code.append(s)
+                        instr_stack = []
             new_code.append(op)
 
     return new_code
@@ -390,10 +396,6 @@ def compile_code(instructions, labels, opt_flags: dict):
                      "  sub rsp, 32\n")
         for i, op in enumerate(instructions):
             op = op[3]
-            if len(op) == 1:
-                print(i, op[0].name)
-            else:
-                print(i, op[0].name, op[1])
             if i in labels:
                 output.write(f"{label_name}_{i}:\n")
             output.write(f"; -- {op} --\n")
@@ -535,11 +537,12 @@ def compile_code(instructions, labels, opt_flags: dict):
                     optimized.append((index, op))
                 else:
                     not_done.append((index, op))
+
             index = 0
             while index < len(not_done):
                 curr_line = not_done[index]
                 if index >= len(not_done) - 1:
-                    optimized.append((index, curr_line[1]))
+                    optimized.append((curr_line[0], curr_line[1]))
                     index += 1
                 else:
                     next_line = not_done[index + 1]
@@ -579,7 +582,6 @@ def compile_code(instructions, labels, opt_flags: dict):
         with open(f"{name}.tmp", "r") as code:
             with open(f"{name}.asm", "w") as asm:
                 asm.writelines(code.readlines())
-
     print(f"[INFO] Generated {name}.asm")
     os.remove(f"{name}.tmp")
     print(f"[INFO] Removed {name}.tmp")
@@ -604,7 +606,7 @@ def get_help(flag):
 
 
 def get_usage(program_name):
-    return f"Usage: {program_name} [-h] <input.hpt> [-s | -c | -d] [-o]"
+    return f"Usage: {program_name} [-h] <input.hpt> [-s | -c | -d] [-o | -f]"
 
 
 def main():
@@ -615,6 +617,10 @@ def main():
     opt_flags = dict(zip(optional_flags, [False] * len(optional_flags)))
     program_name, sys.argv = shift(sys.argv)
     program_name = program_name.split("\\")[-1]
+    if len(sys.argv) < 1:
+        print_error("Not enough parameters!",
+                    get_usage(program_name) + "\n"
+                    f"       If you need more help, run `{program_name} -h`")
     if sys.argv[0] == '-h':
         print(get_usage(program_name))
         for flag in flags:
@@ -654,10 +660,8 @@ def main():
                 opt_flags[opt] = True
 
     if run_flag == '-s':
-        print("Simulated Output: ")
         simulate_code(instructions)
     elif run_flag == '-c':
-        print("Compiled Output: ")
         compile_code(instructions, labels, opt_flags)
     elif run_flag == '-d':
         for i, op in enumerate(instructions):

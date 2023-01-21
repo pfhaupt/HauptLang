@@ -1,12 +1,10 @@
-38746260 $n
-while &n 2 > do
-    2 $factor
-    while &factor &n 1 + < do
-        if &n &factor % 0 == do
-            &n &factor / $n
-            &factor print
-        else
-            &factor 1 + $factor
-        end
+600851475143 $n
+2 $factor
+while &factor &n 1 + < do
+    if &n &factor % 0 == do
+        &n &factor / $n
+        &factor print
+    else
+        &factor 1 + $factor
     end
 end

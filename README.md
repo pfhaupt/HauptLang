@@ -11,7 +11,7 @@ This project is inspired by [Porth](https://www.youtube.com/watch?v=8QP2fDBIxjM&
 - [x] Compiled into a [Windows Executable](https://en.wikipedia.org/wiki/Portable_Executable)
 - [ ] Functions, Arrays, String support
 - [ ] Type system (Only Integers are supported right now)
-- [ ] Self hosting
+- [ ] Self-hosting
 - [ ] Optimizations
 - [ ] Cross-Platform support
 
@@ -54,7 +54,13 @@ So make sure you have both of those tools available in your %PATH%.
 ```
 
 ### Testing
-**TBD**
+```console
+> test.py
+```
+Runs all programs in the [./project-euler/](#project-euler) folder
+and reports the exit code for both compilation and execution.  
+If any program fails, the test stops and displays the error.  
+Useful to see if everything is working as intended.
 
 ## Language Support
 **TBD**

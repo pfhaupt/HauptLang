@@ -61,8 +61,9 @@ def print_error(err, info="", error_type=ErrorTypes.NORMAL):
     exit(1)
 
 
-def call_cmd(cmd: List):
-    print("[CMD] " + " ".join(cmd))
+def call_cmd(cmd: List, silenced=False):
+    if not silenced:
+        print("[CMD] " + " ".join(cmd))
     subprocess.call(cmd)
 
 
@@ -509,6 +510,8 @@ def simulate_code(instructions, mem):
 # Call Program: output.exe
 def compile_code(instructions, memory, labels, opt_flags: dict):
     assert len(OpSet) == 19, "Not all OP can be compiled yet"
+    silenced = opt_flags['-m']
+    optimized = opt_flags['-o']
     name = "output"
     label_name = "instr"
     with open(name + ".tmp", "w") as output:
@@ -660,12 +663,13 @@ def compile_code(instructions, memory, labels, opt_flags: dict):
                 exit(1)
         output.write("\n")
         output.write(f"{label_name}_{len(instructions)}:\n")
-        output.write("  xor rax, rax\n")
+        output.write("  xor rcx, rcx\n")
         output.write("  call ExitProcess\n")
 
-    print(f"[INFO] Generated {name}.tmp")
+    if not silenced:
+        print(f"[INFO] Generated {name}.tmp")
 
-    if opt_flags['-o']:
+    if optimized:
         optimized = []
         not_done = []
         with open(f"{name}.tmp", "r") as unoptimized:
@@ -730,8 +734,9 @@ def compile_code(instructions, memory, labels, opt_flags: dict):
             optimized.sort(key=lambda tup: tup[0])
             optimized_line_count = len(optimized)
 
-        print(f"[INFO] Removed {unoptimized_line_count - optimized_line_count} "
-              f"lines of ASM due to optimization.")
+        if not silenced:
+            print(f"[INFO] Removed {unoptimized_line_count - optimized_line_count} "
+                  f"lines of ASM due to optimization.")
         with open(f"{name}.asm", "w") as output:
             for (i, op) in optimized:
                 output.write(op + "\n")
@@ -739,12 +744,17 @@ def compile_code(instructions, memory, labels, opt_flags: dict):
         with open(f"{name}.tmp", "r") as code:
             with open(f"{name}.asm", "w") as asm:
                 asm.writelines(code.readlines())
-    print(f"[INFO] Generated {name}.asm")
+
+    if not silenced:
+        print(f"[INFO] Generated {name}.asm")
     os.remove(f"{name}.tmp")
-    print(f"[INFO] Removed {name}.tmp")
-    call_cmd(["nasm", "-f", "win64", f"{name}.asm", "-o", f"{name}.obj"])
-    call_cmd(["golink", "/no", "/console", "/entry", "main", f"{name}.obj", "MSVCRT.dll", "kernel32.dll"])
-    print(f"[CMD] Created {name}.exe")
+    if not silenced:
+        print(f"[INFO] Removed {name}.tmp")
+    call_cmd(["nasm", "-f", "win64", f"{name}.asm", "-o", f"{name}.obj"], silenced)
+    call_cmd(["golink", "/no", "/console", "/entry", "main", f"{name}.obj", "MSVCRT.dll", "kernel32.dll"],
+             silenced)
+    if not silenced:
+        print(f"[CMD] Created {name}.exe")
     # call_cmd([f"{name}.exe"])
 
 
@@ -764,35 +774,37 @@ def get_help(flag):
             return "Optimize the generated code. Only works in combination with `-c`."
         case '-h':
             return "Shows this help screen."
+        case '-m':
+            return "Mutes compilation command line output."
         case _:
             return "[No description]"
 
 
 def get_usage(program_name):
-    return f"Usage: {program_name} [-h] <input.hpt> [-s | -c | -d] [-o | -f]"
+    return f"Usage: {program_name} [-h] <input.hpt> " \
+           f"[-s | -c | -d] [-o, -m]\n" \
+           f"       If you need more help, run `{program_name} -h`"
 
 
 def main():
     # TODO: Add Strings, Arrays, Functions
-    flags = ['-s', '-c', '-d', '-o', '-h']
-    exec_flags = flags[:3]
-    optional_flags = flags[3:]
+    flags = ['-h', '-s', '-c', '-d', '-o', '-m']
+    exec_flags = flags[1:4]
+    optional_flags = flags[4:]
     opt_flags = dict(zip(optional_flags, [False] * len(optional_flags)))
     program_name, sys.argv = shift(sys.argv)
     program_name = program_name.split("\\")[-1]
     if len(sys.argv) < 1:
         print_error("Not enough parameters!",
-                    f"{get_usage(program_name)}\n"
-                    f"       If you need more help, run `{program_name} -h`")
+                    f"{get_usage(program_name)}\n")
     if sys.argv[0] == '-h':
         print(get_usage(program_name))
         for flag in flags:
-            print(f"{flag}: " + get_help(flag))
+            print(f"{flag}:\t" + get_help(flag))
         exit(0)
     if len(sys.argv) < 2:
         print_error("Not enough parameters!",
-                    f"{get_usage(program_name)}\n"
-                    f"       If you need more help, run `{program_name} -h`")
+                    f"{get_usage(program_name)}\n")
     input_file, sys.argv = shift(sys.argv)
     if not input_file.endswith(".hpt"):
         print_error(f"File {input_file} does not end with `.hpt`!",
@@ -837,8 +849,8 @@ def main():
             print(i, op[3])
         exit(1)
     else:
-        print(f"Unknown flag `{run_flag}")
-        print(f"Usage: {program_name} <input.hpt> [-s | -c | -d]")
+        print(f"Unknown flag `{run_flag}`")
+        print(get_usage(program_name))
         exit(1)
 
 

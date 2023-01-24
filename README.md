@@ -1,7 +1,5 @@
 # HauptLang
 ## Overview
-This is a project I have been working on for a while.
-
 Haupt is a [Concatenative](https://en.wikipedia.org/wiki/Concatenative_programming_language) [Stack-Oriented](https://en.wikipedia.org/wiki/Stack-oriented_programming) programming language created to explore the process of creating a custom programming language.  
 It is not intended to be fast or easy to use (this may be subject to change).
 

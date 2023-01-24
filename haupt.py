@@ -23,24 +23,41 @@ class OpSet(Enum):
     EQ = auto()
     NEQ = auto()
     PRINT = auto()
-    GET_MEM = auto()
-    SET_MEM = auto()
     IF = auto()
     ELSE = auto()
     DO = auto()
     END = auto()
     WHILE = auto()
+    SET_INT = auto()
+    GET_INT = auto()
 
 
-GET_MEM_CHAR = "&"
-SET_MEM_CHAR = "$"
 COMMENT_CHAR = "#"
 
-memory = {}
+
+def get_instruction_location(instruction):
+    return (f"{instruction[0]}:"
+            f"{Fore.CYAN}{instruction[1]}:{instruction[2]}{Style.RESET_ALL}")
 
 
-def print_error(err, info=""):
-    print(f"{Fore.LIGHTRED_EX}ERROR: {err}{Style.RESET_ALL}\n{info}")
+class ErrorTypes(Enum):
+    NORMAL = auto()
+    STACK = auto()
+
+
+def print_error(err, info="", error_type=ErrorTypes.NORMAL):
+    match error_type:
+        case ErrorTypes.NORMAL:
+            if len(info) == 0:
+                print(f"{Fore.LIGHTRED_EX}Error: {err}{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.LIGHTRED_EX}Error: {err}{Style.RESET_ALL}\n{info}")
+        case ErrorTypes.STACK:
+            if len(info) == 0:
+                print(f"{Fore.LIGHTRED_EX}StackError: {err}{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.LIGHTRED_EX}StackError: {err}{Style.RESET_ALL}\n{info}")
+
     exit(1)
 
 
@@ -73,7 +90,7 @@ def load_from_file(file_path: str):
                 for (col, token) in get_token_in_line(line)]
 
 
-def parse_op(op: str):
+def parse_op(op: str, memory: List):
     other_info = op
     op = op[3]
     assert len(OpSet) == 19, "Not all OP can be parsed yet"
@@ -91,10 +108,6 @@ def parse_op(op: str):
         op = OpSet.PRINT,
     elif (op.startswith("-") and op[1:].isdigit()) or op.isdigit():
         op = OpSet.PUSH, int(op)
-    elif op.startswith(SET_MEM_CHAR):
-        op = OpSet.SET_MEM, op[len(SET_MEM_CHAR):]
-    elif op.startswith(GET_MEM_CHAR):
-        op = OpSet.GET_MEM, op[len(GET_MEM_CHAR):]
     elif op == 'if':
         op = OpSet.IF,
     elif op == "==":
@@ -113,16 +126,120 @@ def parse_op(op: str):
         op = OpSet.ELSE,
     elif op == "while":
         op = OpSet.WHILE,
+    elif op == "!64":
+        op = OpSet.SET_INT,
+    elif op == "?64":
+        op = OpSet.GET_INT,
+    elif op == "mem":
+        print_error("Unexpected `mem` found",
+                    f"{get_instruction_location(other_info)}"
+                    f" => `{op}`\n"
+                    f"Memory block needs to be declared at the very top of the program.")
     else:
-        print_error(f"Unknown token in parse_op(op)!",
-                    f"{other_info[0]}:"
-                    f"{Fore.CYAN}{other_info[1]}:{other_info[2]}{Style.RESET_ALL}"
-                    f" => `{op}`")
+        variable = False
+        for mem in memory:
+            if op == mem[3]:
+                variable = True
+                break
+        if variable:
+            pass
+        else:
+            print_error(f"Unknown token in parse_op(op)!",
+                        f"{get_instruction_location(other_info)}"
+                        f" => `{op}`")
     return other_info[0], other_info[1], other_info[2], op
 
 
 def parse_instructions(code: List):
-    return [parse_op(op) for op in code]
+    memory_found = False
+    for op in code:
+        if memory_found and op[3] == "mem":
+            print_error("Multiple memory blocks found",
+                        "Right now only one memory block is supported\n")
+        elif op[3] == "mem":
+            memory_found = True
+    memory = []
+    memory_index = 0
+    op = code[memory_index][3]
+    if op == "mem":
+        while code[memory_index][3] != "end":
+            if memory_index == len(code) - 1:
+                print_error("Matching `end` not found!",
+                            f"{get_instruction_location(code[memory_index])}: "
+                            "`mem` block does not have matching `end`.")
+            memory.append(code[memory_index])
+            memory_index += 1
+        memory.append(code[memory_index])
+    new_code = []
+    for op in code:
+        if op not in memory:
+            new_code.append(op)
+
+    instructions = [parse_op(op, memory) for op in new_code]
+
+    return instructions, memory
+    # return [parse_op(op) for op in code]
+
+
+# Format: OP: [PUSH_CNT, POP_CNT]
+# Example: ADD: [1, 2] means that ADD pushes 1 operand to the stack and pops 2 operands.
+push_pop_dict = {
+    'NOP': [0, 0],
+    'PUSH': [1, 0],
+    'ADD': [1, 2],
+    'SUB': [1, 2],
+    'MUL': [1, 2],
+    'DIV': [1, 2],
+    'MOD': [1, 2],
+    'LT': [1, 2],
+    'GT': [1, 2],
+    'EQ': [1, 2],
+    'NEQ': [1, 2],
+    'PRINT': [0, 1],
+    'IF': [0, 0],
+    'ELSE': [0, 0],
+    'DO': [0, 1],
+    'END': [0, 0],
+    'WHILE': [0, 0],
+    'SET_INT': [0, 2],
+    'GET_INT': [1, 1],
+}
+
+assert len(OpSet) == len(push_pop_dict), "Not all instructions are included in `push_pop_dict`"
+
+
+def evaluate_stack(instructions, memory):
+    # goes over instructions, lazily evaluates stack size
+    # if at any point any instruction does not have the operands it needs, print error
+    stack_size = 0
+    for instr in instructions:
+        op = instr[3]
+        variable = False
+        for mem in memory:
+            if op == mem[3]:
+                variable = True
+                break
+        if not variable:
+            stack_pop = push_pop_dict[op[0].name][1]
+        else:
+            stack_pop = 0
+        if stack_size - stack_pop < 0:
+            print_error("Stack underflow!",
+                        f"{get_instruction_location(instr)}"
+                        f" => `{op[0].name.lower()}`, expected {stack_pop} argument(s), found {stack_size}",
+                        ErrorTypes.STACK)
+        stack_size -= stack_pop
+        if not variable:
+            stack_push = push_pop_dict[op[0].name][0]
+        else:
+            stack_push = 1
+        stack_size += stack_push
+    if stack_size > 0:
+        print_error("Unhandled Data on Stack",
+                    f"There are still {stack_size} item(s) on the stack.\n"
+                    "Please make sure that the stack is empty after program is finished executing.",
+                    ErrorTypes.STACK)
+    return instructions
 
 
 def evaluate_static_equations(instructions):
@@ -137,7 +254,7 @@ def evaluate_static_equations(instructions):
     instr_stack = []
     for op in instructions:
         instr = op[3]
-        if instr[0].value <= last_arith.value:
+        if not type(instr) == str and instr[0].value <= last_arith.value:
             instr_stack.append(op)
         else:
             if len(instr_stack) > 0:
@@ -221,8 +338,7 @@ def cross_reference(instructions):
             instr = stack.pop()
             if instr[1][0] != OpSet.IF:
                 print_error("Attempted to link `else` with non-if!",
-                            f"{instructions[index][0]}:"
-                            f"{Fore.CYAN}{instructions[index][1]}:{instructions[index][2]}{Style.RESET_ALL}"
+                            f"{get_instruction_location(instructions[index])}"
                             f" => `{instr[1][0].name.lower()}` does not support `else`.")
             instructions[instr[2]] = (
                 instructions[index][0], instructions[index][1], instructions[index][2],
@@ -259,8 +375,7 @@ def cross_reference(instructions):
     if len(stack) != 0:
         op_info = instructions[stack[-1][2]]
         print_error("Missing END",
-                    f"{op_info[0]}:"
-                    f"{Fore.CYAN}{op_info[1]}:{op_info[2]}{Style.RESET_ALL}"
+                    f"{get_instruction_location(op_info)}"
                     f" => `{op_info[3][0].name.lower()}` has no matching end.")
 
     # contains all indexes which will be jumped to
@@ -279,13 +394,38 @@ def cross_reference(instructions):
     return instructions, jmp_instr
 
 
-def simulate_code(instructions):
+def tidy_memory(memory):
+    memory = memory[1:][:-1]
+    if len(memory) % 2 != 0:
+        memory_as_string = ""
+        for mem in memory:
+            memory_as_string = memory_as_string + mem[3] + ", "
+        if len(memory_as_string) > 0:
+            memory_as_string = memory_as_string[:-2]
+        print_error("Memory block is not aligned properly.",
+                    "Expected memory block of form `var1 value1 var2 value2 ...`,\n"
+                    "but memory size is not even.\n"
+                    f"Found {len(memory)} elements: " +
+                    memory_as_string)
+    new_memory = []
+    for i in range(0, len(memory), 2):
+        new_memory.append((memory[i][3], memory[i + 1][3]))
+    return new_memory
+
+
+def simulate_code(instructions, mem):
     assert len(OpSet) == 19, "Not all OP can be simulated yet"
     stack = []
+    memory = {}
+    for m in mem:
+        memory[m[0]] = 0
     index = 0
     while index < len(instructions):
         op = instructions[index][3]
-        if op[0] == OpSet.PUSH:
+        if op in memory:
+            stack.append(op)
+            index += 1
+        elif op[0] == OpSet.PUSH:
             stack.append(op[1])
             index += 1
         elif op[0] == OpSet.ADD:
@@ -316,15 +456,19 @@ def simulate_code(instructions):
         elif op[0] == OpSet.PRINT:
             print(stack.pop())
             index += 1
-        elif op[0] == OpSet.SET_MEM:
-            memory[op[1]] = stack.pop()
-            index += 1
-        elif op[0] == OpSet.GET_MEM:
-            stack.append(memory[op[1]])
-            index += 1
         elif op[0] == OpSet.IF or op[0] == OpSet.WHILE:
             index += 1
             pass
+        elif op[0] == OpSet.SET_INT:
+            variable = stack.pop()
+            value = stack.pop()
+            memory[variable] = value
+            index += 1
+        elif op[0] == OpSet.GET_INT:
+            variable = stack.pop()
+            value = memory[variable]
+            stack.append(value)
+            index += 1
         elif op[0] == OpSet.EQ:
             a = stack.pop()
             b = stack.pop()
@@ -360,30 +504,25 @@ def simulate_code(instructions):
                         f"Can't simulate unknown op {op}")
 
 
-def get_vars(instructions):
-    return {op[3][1] for op in instructions if op[3][0] == OpSet.SET_MEM}
-
-
 # Create Obj file: nasm -f win64 output.asm -o output.obj
 # Link Obj together: golink /no /console /entry main output.obj MSVCRT.dll kernel32.dll
 # Call Program: output.exe
-# You can combine those commands with && for a single cmd to do all of it
-# Measure speed: powershell Measure-Command { .\output.exe }
-def compile_code(instructions, labels, opt_flags: dict):
+def compile_code(instructions, memory, labels, opt_flags: dict):
     assert len(OpSet) == 19, "Not all OP can be compiled yet"
-    used_vars = get_vars(instructions)
-
     name = "output"
     label_name = "instr"
     with open(name + ".tmp", "w") as output:
         output.write("bits 64\n")
         output.write("default rel\n")
+        output.write("\n")
         output.write("segment .data\n")
         output.write("  format_string db \"%lld\", 0xd, 0xa, 0\n")
         output.write("  true db 1\n"
                      "  false db 0\n")
-        for var in used_vars:
-            output.write(f"  {var} dq 0\n")
+        output.write("\n")
+        output.write("segment .bss\n")
+        for var in memory:
+            output.write(f"  {var[0]} resb {var[1]}\n")
         output.write("\n")
         output.write("segment .text\n"
                      "global main\n"
@@ -399,10 +538,20 @@ def compile_code(instructions, labels, opt_flags: dict):
             if i in labels:
                 output.write(f"{label_name}_{i}:\n")
             output.write(f"; -- {op} --\n")
-            if op[0] == OpSet.PUSH:
+            if type(op) == str:
+                variable = False
+                for var, size in memory:
+                    if var == op:
+                        variable = True
+                        break
+                if not variable:
+                    print_error("Unexpected token in compilation",
+                                f"=> `{op}`.")
+                else:
+                    output.write(f"  push {op}\n")
+            elif op[0] == OpSet.PUSH:
                 output.write(f"  mov rax, qword {op[1]}\n")
                 output.write(f"  push rax\n")
-                # output.write(f"  push rax\n")
             elif op[0] == OpSet.ADD:
                 output.write("  pop rax\n")
                 output.write("  pop rbx\n")
@@ -492,14 +641,22 @@ def compile_code(instructions, labels, opt_flags: dict):
                 else:
                     end_goal = i + op[1] + 1
                     output.write(f"  jmp {label_name}_{end_goal}\n")
-            elif op[0] == OpSet.SET_MEM:
+            elif op[0] == OpSet.SET_INT:
+                # value var set_int
                 output.write("  pop rax\n")
-                output.write(f"  mov [{op[1]}], rax\n")
-            elif op[0] == OpSet.GET_MEM:
-                output.write(f"  mov rax, [{op[1]}]\n")
-                output.write("  push rax\n")
+                # rax contains var
+                output.write("  pop rbx\n")
+                # rbx contains val
+                output.write("  mov [rax], rbx\n")
+            elif op[0] == OpSet.GET_INT:
+                # var get_int
+                output.write(f"  pop rax\n")
+                # rax contains ptr to var
+                output.write(f"  mov rbx, [rax]\n")
+                # rbx contains value of var
+                output.write("  push rbx\n")
             else:
-                print(f"{op} can't be compiled yet")
+                print(f"`{op}` can't be compiled yet")
                 exit(1)
         output.write("\n")
         output.write(f"{label_name}_{len(instructions)}:\n")
@@ -597,12 +754,18 @@ def shift(argv):
 
 def get_help(flag):
     match flag:
-        case '-s': return "Simulates the given input code in Python."
-        case '-c': return "Compiles the given input code and generates a single executable."
-        case '-d': return "Debug Mode: Parses the input code, prints the instructions, then exits."
-        case '-o': return "Optimize the generated code. Only works in combination with `-c`."
-        case '-h': return "Shows this help screen."
-        case _: return "[No description]"
+        case '-s':
+            return "Simulates the given input code in Python."
+        case '-c':
+            return "Compiles the given input code and generates a single executable."
+        case '-d':
+            return "Debug Mode: Parses the input code, prints the instructions, then exits."
+        case '-o':
+            return "Optimize the generated code. Only works in combination with `-c`."
+        case '-h':
+            return "Shows this help screen."
+        case _:
+            return "[No description]"
 
 
 def get_usage(program_name):
@@ -619,7 +782,7 @@ def main():
     program_name = program_name.split("\\")[-1]
     if len(sys.argv) < 1:
         print_error("Not enough parameters!",
-                    get_usage(program_name) + "\n"
+                    f"{get_usage(program_name)}\n"
                     f"       If you need more help, run `{program_name} -h`")
     if sys.argv[0] == '-h':
         print(get_usage(program_name))
@@ -628,7 +791,7 @@ def main():
         exit(0)
     if len(sys.argv) < 2:
         print_error("Not enough parameters!",
-                    get_usage(program_name) + "\n"
+                    f"{get_usage(program_name)}\n"
                     f"       If you need more help, run `{program_name} -h`")
     input_file, sys.argv = shift(sys.argv)
     if not input_file.endswith(".hpt"):
@@ -646,9 +809,12 @@ def main():
         print_error("Third Parameter has to be an execution flag!",
                     get_usage(program_name))
 
-    instructions = parse_instructions(code)
+    instructions, memory = parse_instructions(code)
+    instructions = evaluate_stack(instructions, memory)
     instructions = evaluate_static_equations(instructions)
     instructions, labels = cross_reference(instructions)
+
+    memory = tidy_memory(memory)
 
     if len(sys.argv) > 0:
         opt_args = sys.argv
@@ -660,12 +826,15 @@ def main():
                 opt_flags[opt] = True
 
     if run_flag == '-s':
-        simulate_code(instructions)
+        simulate_code(instructions, memory)
     elif run_flag == '-c':
-        compile_code(instructions, labels, opt_flags)
+        compile_code(instructions, memory, labels, opt_flags)
     elif run_flag == '-d':
+        for i, mem in enumerate(memory):
+            print(mem[0] + ": " + mem[1] + " bytes")
+        print("*" * 50)
         for i, op in enumerate(instructions):
-            print(i, op)
+            print(i, op[3])
         exit(1)
     else:
         print(f"Unknown flag `{run_flag}")

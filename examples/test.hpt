@@ -1,8 +1,0 @@
-0 $index
-100001 $limit
-while &index &limit < do
-    if &index 1000 % 0 == do
-        &index print
-    end
-    &index 1 + $index
-end

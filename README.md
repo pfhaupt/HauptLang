@@ -2,27 +2,32 @@
 ## Overview
 This is a project I have been working on for a while.
 
+Haupt is a [Concatenative](https://en.wikipedia.org/wiki/Concatenative_programming_language) [Stack-Oriented](https://en.wikipedia.org/wiki/Stack-oriented_programming) programming language created to explore the process of creating a custom programming language.  
+It is not intended to be fast or easy to use (this may be subject to change).
+
+This project is inspired by [Porth](https://www.youtube.com/watch?v=8QP2fDBIxjM&list=PLpM-Dvs8t0VbMZA7wW9aR3EtBqe2kinu4).
+
+**All features are highly experimental and might change at any time.**
+
 ## Milestones/Roadmap
-- [x] Compiled to a native instruction set (x86-64, Windows only for now)
+- [x] Compiled into a [Windows Executable](https://en.wikipedia.org/wiki/Portable_Executable)
 - [ ] Functions, Arrays, String support
 - [ ] Type system (Only Integers are supported right now)
-- [ ] Optimizations
 - [ ] Self hosting
+- [ ] Optimizations
+- [ ] Cross-Platform support
 
 ## Content
 ### haupt.py
 This is the heart of the language.
 Usage:
-> haupt.py <input.hpt> [-s | -c | -d]
-#### Flags
--s: Interpret the code in Python
+> haupt.py <input.hpt> [-s | -c | -d] [optional flags]
 
--c: Compile the code and link it into a single executable
+or
 
--d: For debugging purposes - Only prints the parsed instruction list to the screen
+> haupt.py -h
 
--h: Shows help
-
+to show more options.
 
 ### ./project-euler/...
 This folder contains implementations of a few [Project Euler](https://projecteuler.net/) problems in this language.
@@ -31,22 +36,27 @@ This folder contains implementations of a few [Project Euler](https://projecteul
 
 ## Quick Start
 ### Compilation
-Compilation generates assembly code and compiles it with [nasm](https://www.nasm.us/), then links everything with [GoLink](https://www.godevtool.com/).
+Compilation generates assembly code and compiles it with [nasm](https://www.nasm.us/), then links everything with [GoLink](https://www.godevtool.com/).  
 So make sure you have both of those tools available in your %PATH%.
 
+```console
+> readme.hpt
+42 print
+10 5 + print
 ```
-> test.hpt
-42 $var
-&var print
-
-> haupt.py test.hpt -c
+```console
+> haupt.py readme.hpt -c
 [compilation logs]
 [generated output.exe]
-
+```
+```console
 > output.exe
 42
+15
 ```
 
-## Language Support
+### Testing
+**TBD**
 
+## Language Support
 **TBD**

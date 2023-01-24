@@ -1,10 +1,16 @@
-600851475143 $n
-2 $factor
-while &factor &n 1 + < do
-    if &n &factor % 0 == do
-        &n &factor / $n
-        &factor print
+mem
+    n 8
+    factor 8
+end
+
+600851475143 n !64
+2 factor !64
+
+while factor ?64 n ?64 1 + < do
+    if n ?64 factor ?64 % 0 == do
+        n ?64 factor ?64 / n !64
+        factor ?64 print
     else
-        &factor 1 + $factor
+        factor ?64 1 + factor !64
     end
 end

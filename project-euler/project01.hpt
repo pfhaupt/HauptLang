@@ -1,21 +1,22 @@
-#10 % 3
-#(10 / 3) * 3 == 10 -> divisible
-#else not
-# 10 3 / 3 * 10 ==
-
-0 $result
-
-1000 $limit
-0 $index
-while &index &limit < do
-    if &index 3 % 0 == do
-        &result &index + $result
-    else
-        if &index 5 % 0 == do
-            &result &index + $result
-        end
-    end
-    &index 1 + $index
+mem
+    result 8
+    limit 8
+    index 8
 end
 
-&result print
+0 result !64
+1000 limit !64
+0 index !64
+
+while index ?64 limit ?64 < do
+    if index ?64 3 % 0 == do
+        result ?64 index ?64 + result !64
+    else
+        if index ?64 5 % 0 == do
+            result ?64 index ?64 + result !64
+        end
+    end
+    index ?64 1 + index !64
+end
+
+result ?64 print

@@ -1,32 +1,42 @@
-0 $a
-0 $b
-0 $c
-0 $result
+mem
+    a 8
+    b 8
+    c 8
+    result 8
+    running 8
+end
 
-1 $running
+0 a !64
+0 b !64
+0 c !64
+0 result !64
+1 running !64
 
-while &running do
-    1 $a
-    while &a 1000 < do
-        1 $b
-        while &b 1000 < do
-            1 $c
-            while &c 1000 < do
-                if &a &a * &b &b * + &c &c * == do
-                    if &a &b &c + + 1000 == do
-                        &a &b &c * * $result
-                        1000 $c
-                        1000 $a
-                        1000 &b
-                        0 $running
+while running ?64 do
+    1 a !64
+    while a ?64 1000 < do
+        1 b !64
+        while b ?64 1000 < do
+            1 c !64
+            while c ?64 1000 < do
+                if  a ?64 a ?64 *
+                    b ?64 b ?64 * +
+                    c ?64 c ?64 * ==
+                    do
+                    if a ?64 b ?64 c ?64 + + 1000 == do
+                        a ?64 b ?64 c ?64 * * result !64
+                        1000 a !64
+                        1000 b !64
+                        1000 c !64
+                        0 running !64
                     end
                 end
-                &c 1 + $c
+                c ?64 1 + c !64
             end
-            &b 1 + $b
+            b ?64 1 + b !64
         end
-        &a 1 + $a
+        a ?64 1 + a !64
     end
 end
 
-&result print
+result ?64 print

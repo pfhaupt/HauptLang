@@ -1,25 +1,32 @@
-1 $n
-0 $max
-0 $best
+mem
+    n 8
+    max 8
+    best 8
+    index 8
+    chain 8
+end
+1 n !64
+0 max !64
+0 best !64
 
-1 $index
-while &index 1000000 < do
-    &index $n
-    1 $chain
-    while &n 1 != do
-        if &n 2 % 0 == do
-            &n 2 / $n
+1 index !64
+while index ?64 1000000 < do
+    index ?64 n !64
+    1 chain !64
+    while n ?64 1 != do
+        if n ?64 2 % 0 == do
+            n ?64 2 / n !64
         else
-            &n 3 * 1 + $n
+            n ?64 3 * 1 + n !64
         end
-        &chain 1 + $chain
+        chain ?64 1 + chain !64
     end
-    if &chain &max > do
-        &chain $max
-        &index $best
+    if chain ?64 max ?64 > do
+        chain ?64 max !64
+        index ?64 best !64
     end
-    &index 1 + $index
+    index ?64 1 + index !64
 end
 
-&max print
-&best print
+max ?64 print
+best ?64 print

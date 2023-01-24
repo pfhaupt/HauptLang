@@ -1,18 +1,27 @@
-1 $n
-0 $done
-20 $up_to
-while &done 0 == do
-    1 $index
-    1 $count
-    while &index &up_to < do
-        if &n &index % 0 == do
-            &count 1 + $count
+mem
+    n 8
+    done 8
+    up_to 8
+    index 8
+    count 8
+end
+
+1 n !64
+0 done !64
+20 up_to !64
+
+while done ?64 0 == do
+    1 index !64
+    1 count !64
+    while index ?64 up_to ?64 < do
+        if n ?64 index ?64 % 0 == do
+            count ?64 1 + count !64
         end
-        &index 1 + $index
+        index ?64 1 + index !64
     end
-    if &count &up_to > do
-        &n print
-        1 $done
+    if count ?64 up_to ?64 > do
+        n ?64 print
+        1 done !64
     end
-    &n 1 + $n
+    n ?64 1 + n !64
 end

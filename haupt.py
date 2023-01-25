@@ -88,7 +88,7 @@ def load_from_file(file_path: str):
     with open(file_path, "r") as f:
         return [(file_path, row + 1, col + 1, token)
                 for (row, line) in get_lines(f.readlines())
-                for (col, token) in get_token_in_line(line)]
+                for (col, token) in get_token_in_line(line.split(COMMENT_CHAR)[0])]
 
 
 def parse_op(op: str, memory: List):
@@ -227,7 +227,7 @@ def evaluate_stack(instructions, memory):
         if stack_size - stack_pop < 0:
             print_error("Stack underflow!",
                         f"{get_instruction_location(instr)}"
-                        f" => `{op[0].name.lower()}`, expected {stack_pop} argument(s), found {stack_size}",
+                        f" => `{op[0].name.lower()}` expected {stack_pop} argument(s), found {stack_size}",
                         ErrorTypes.STACK)
         stack_size -= stack_pop
         if not variable:
@@ -588,18 +588,18 @@ def compile_code(instructions, memory, labels, opt_flags: dict):
                 output.write("  lea rcx, [format_string]\n")
                 output.write("  call printf\n")
             elif op[0] == OpSet.EQ:
-                output.write("  pop rbx\n")
                 output.write("  pop rax\n")
-                output.write("  cmp rax, rbx\n")
+                output.write("  pop rbx\n")
+                output.write("  cmp rbx, rax\n")
                 output.write("  pushf\n")
                 output.write("  pop rax\n")
                 output.write("  shr rax, 6\n")
                 output.write("  and rax, 1\n")
                 output.write("  push rax\n")
             elif op[0] == OpSet.NEQ:
-                output.write("  pop rbx\n")
                 output.write("  pop rax\n")
-                output.write("  cmp rax, rbx\n")
+                output.write("  pop rbx\n")
+                output.write("  cmp rbx, rax\n")
                 output.write("  pushf\n")
                 output.write("  pop rax\n")
                 output.write("  shr rax, 6\n")
@@ -607,18 +607,18 @@ def compile_code(instructions, memory, labels, opt_flags: dict):
                 output.write("  and rax, 1\n")
                 output.write("  push rax\n")
             elif op[0] == OpSet.LT:
-                output.write("  pop rbx\n")
                 output.write("  pop rax\n")
-                output.write("  cmp rax, rbx\n")
+                output.write("  pop rbx\n")
+                output.write("  cmp rbx, rax\n")
                 output.write("  pushf\n")
                 output.write("  pop rax\n")
                 output.write("  shr rax, 7\n")
                 output.write("  and rax, 1\n")
                 output.write("  push rax\n")
             elif op[0] == OpSet.GT:
-                output.write("  pop rbx\n")
                 output.write("  pop rax\n")
-                output.write("  cmp rax, rbx\n")
+                output.write("  pop rbx\n")
+                output.write("  cmp rbx, rax\n")
                 output.write("  pushf\n")
                 output.write("  pop rax\n")
                 output.write("  shr rax, 7\n")

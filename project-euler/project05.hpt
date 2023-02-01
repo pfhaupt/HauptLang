@@ -8,7 +8,7 @@ end
 
 1 n !64
 0 done !64
-20 up_to !64
+10 up_to !64
 
 while done ?64 0 == do
     1 index !64
@@ -19,7 +19,7 @@ while done ?64 0 == do
         end
         index ?64 1 + index !64
     end
-    if count ?64 up_to ?64 > do
+    if count ?64 up_to ?64 == do
         n ?64 print
         1 done !64
     end

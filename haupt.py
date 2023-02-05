@@ -211,7 +211,7 @@ push_pop_dict = {
 assert len(OpSet) == len(push_pop_dict), "Not all instructions are included in `push_pop_dict`"
 
 
-def  (instructions, memory):
+def evaluate_stack(instructions, memory):
     # goes over instructions, lazily evaluates stack size
     # if at any point any instruction does not have the operands it needs, print error
     stack_size = 0

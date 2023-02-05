@@ -13,32 +13,49 @@ def call_cmd(cmd: List):
     return subprocess.call(cmd)
 
 
+def run_file(filename: str):
+    print("Running " + filename)
+    start_time = time.perf_counter_ns()
+    exitcode = call_cmd(["python", "haupt.py", filename, "-c", "-o", "-m"])
+    print("Compiling " + filename + " exited with exit code " + str(exitcode))
+    if exitcode != 0:
+        print(Fore.RED + "COMPILATION FAILED: " + filename + Style.RESET_ALL)
+        exit(1)
+    compile_time = (time.perf_counter_ns() - start_time) / 1e6
+    print(f"Compilation took {compile_time}ms.")
+    start_time = time.perf_counter_ns()
+    exitcode = call_cmd([f"{filename.replace('.hpt', '.exe')}"])
+    print("Executing " + filename + " exited with exit code " + str(exitcode))
+    if exitcode != 0:
+        print(Fore.RED + "EXECUTION FAILED: " + filename + Style.RESET_ALL)
+        exit(1)
+    execution_time = (time.perf_counter_ns() - start_time) / 1e6
+    print(f"Execution took {execution_time}ms.")
+    print("*" * 100)
+    os.remove(f"{filename.replace('.hpt', '.exe')}")
+    return compile_time, execution_time
+
+
 def main():
     print("TESTING ALL PROJECT-EULER EXAMPLES.")
     print("If everything is fine, this code exits with exit code 0.")
     print("If not, you'll see shiny red text that shows what went wrong.")
-    total_time = 0
+
+    for filename in os.listdir("./examples"):
+        if filename.endswith(".hpt"):
+            filename = "./examples/" + filename
+            run_file(filename)
+    # exit(1)
+    total_compile_time, total_execution_time = 0, 0
     for filename in os.listdir("./project-euler"):
         if filename.endswith(".hpt"):
             filename = "./project-euler/" + filename
-            print("Running " + filename)
-            start_time = time.time()
-            exitcode = call_cmd(["python", "haupt.py", filename, "-c", "-o", "-m"])
-            print("Compiling " + filename + " exited with exit code " + str(exitcode))
-            if exitcode != 0:
-                print(Fore.RED + "COMPILATION FAILED: " + filename + Style.RESET_ALL)
-                exit(1)
-            exitcode = call_cmd(["output.exe"])
-            print("Executing " + filename + " exited with exit code " + str(exitcode))
-            if exitcode != 0:
-                print(Fore.RED + "EXECUTION FAILED: " + filename + Style.RESET_ALL)
-                exit(1)
-            end_time = time.time()
-            script_time = (end_time - start_time) * 1000
-            total_time += script_time
-            print("Script took {:.2f}ms.".format(script_time))
-            print("*" * 100)
-    print("Testing took {:.2f}ms.".format(total_time))
+            c_t, e_t = run_file(filename)
+            total_compile_time += c_t
+            total_execution_time += e_t
+
+    print("Total Compilation time: {:.2f}ms.".format(total_compile_time))
+    print("Total Execution time: {:.2f}ms.".format(total_execution_time))
     print(Fore.GREEN + "All Tests passed!" + Style.RESET_ALL)
 
 

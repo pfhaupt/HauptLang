@@ -159,18 +159,20 @@ def parse_instructions(code: List):
                         "Right now only one memory block is supported\n")
         elif op[3] == "mem":
             memory_found = True
+
     memory = []
-    memory_index = 0
-    op = code[memory_index][3]
-    if op == "mem":
-        while code[memory_index][3] != "end":
-            if memory_index == len(code) - 1:
-                print_error("Matching `end` not found!",
-                            f"{get_instruction_location(code[memory_index])}: "
-                            "`mem` block does not have matching `end`.")
+    if memory_found:
+        memory_index = 0
+        op = code[memory_index][3]
+        if op == "mem":
+            while code[memory_index][3] != "end":
+                if memory_index == len(code) - 1:
+                    print_error("Matching `end` not found!",
+                                f"{get_instruction_location(code[memory_index])}: "
+                                "`mem` block does not have matching `end`.")
+                memory.append(code[memory_index])
+                memory_index += 1
             memory.append(code[memory_index])
-            memory_index += 1
-        memory.append(code[memory_index])
     new_code = []
     for op in code:
         if op not in memory:
@@ -209,7 +211,7 @@ push_pop_dict = {
 assert len(OpSet) == len(push_pop_dict), "Not all instructions are included in `push_pop_dict`"
 
 
-def evaluate_stack(instructions, memory):
+def  (instructions, memory):
     # goes over instructions, lazily evaluates stack size
     # if at any point any instruction does not have the operands it needs, print error
     stack_size = 0
@@ -508,14 +510,15 @@ def simulate_code(instructions, mem):
 # Create Obj file: nasm -f win64 output.asm -o output.obj
 # Link Obj together: golink /no /console /entry main output.obj MSVCRT.dll kernel32.dll
 # Call Program: output.exe
-def compile_code(instructions, memory, labels, opt_flags: dict):
+def compile_code(program_name, instructions, memory, labels, opt_flags: dict):
     assert len(OpSet) == 19, "Not all OP can be compiled yet"
     silenced = opt_flags['-m']
     optimized = opt_flags['-o']
-    name = "output"
+    keep_asm = opt_flags['-a']
+    name = program_name.replace(".hpt", "")
     label_name = "instr"
     with open(name + ".tmp", "w") as output:
-        output.write("bits 64\n")
+        output.write(f"  ; Generated code for {program_name}\n")
         output.write("default rel\n")
         output.write("\n")
         output.write("segment .data\n")
@@ -528,9 +531,9 @@ def compile_code(instructions, memory, labels, opt_flags: dict):
             output.write(f"  {var[0]} resb {var[1]}\n")
         output.write("\n")
         output.write("segment .text\n"
-                     "global main\n"
-                     "extern ExitProcess\n"
-                     "extern printf\n")
+                     "  global main\n"
+                     "  extern ExitProcess\n"
+                     "  extern printf\n")
         output.write("\n")
         output.write("main:\n")
         output.write("  push rbp\n"
@@ -629,8 +632,8 @@ def compile_code(instructions, memory, labels, opt_flags: dict):
                 if op[1][0] == OpSet.IF or op[1][0] == OpSet.WHILE:
                     end_goal = i + op[2] + 1
                     output.write("  pop rax\n")
-                    output.write("  cmp rax, 0\n")
-                    output.write(f"  je {label_name}_{end_goal}\n")
+                    output.write("  test rax, rax\n")
+                    output.write(f"  jz {label_name}_{end_goal}\n")
                 else:
                     print_error("Compiling DO not implemented yet")
             elif op[0] == OpSet.END:
@@ -665,6 +668,7 @@ def compile_code(instructions, memory, labels, opt_flags: dict):
         print(f"[INFO] Generated {name}.tmp")
 
     if optimized:
+        registers = ["rax", "rbx", "rcx", "rdx", "rbp"]
         optimized = []
         not_done = []
         with open(f"{name}.tmp", "r") as unoptimized:
@@ -726,9 +730,33 @@ def compile_code(instructions, memory, labels, opt_flags: dict):
                         optimized.append((curr_line_index, curr_line[1]))
                         index += 1
 
-            optimized.sort(key=lambda tup: tup[0])
-            optimized_line_count = len(optimized)
+        optimized.sort(key=lambda tup: tup[0])
 
+        # Replaces:
+        #   ; -- (<OpSet.PUSH: 2>, value) --
+        #   mov rax, qword value
+        #   push rax
+        #   ; -- variable --
+        #   push var_name
+        #   ; -- (<OpSet.SET_INT: 18>,) --
+        #   pop rax
+        #   pop rbx
+        #   mov [rax], rbx
+        # with:
+        #   mov [var_name], qword value
+        # TODO: Add this optimization
+        # Replaces:
+        #   ; -- var_name --
+        #   push var_name
+        #   ; -- (<OpSet.GET_INT: 19>,) --
+        #   pop rax
+        #   mov rbx, [rax]
+        #   push rbx
+        # with:
+        #  push qword [var_name]
+        # TODO: Add this optimization
+
+        optimized_line_count = len(optimized)
         if not silenced:
             print(f"[INFO] Removed {unoptimized_line_count - optimized_line_count} "
                   f"lines of ASM due to optimization.")
@@ -746,9 +774,15 @@ def compile_code(instructions, memory, labels, opt_flags: dict):
     if not silenced:
         print(f"[INFO] Removed {name}.tmp")
     call_cmd(["nasm", "-f", "win64", f"{name}.asm", "-o", f"{name}.obj"], silenced)
+    if not keep_asm:
+        os.remove(f"{name}.asm")
+        if not silenced:
+            print(f"[INFO] Removed {name}.asm")
     call_cmd(["golink", "/no", "/console", "/entry", "main", f"{name}.obj", "MSVCRT.dll", "kernel32.dll"],
              silenced)
+    os.remove(f"{name}.obj")
     if not silenced:
+        print(f"[INFO] Removed {name}.obj")
         print(f"[CMD] Created {name}.exe")
     # call_cmd([f"{name}.exe"])
 
@@ -759,6 +793,8 @@ def shift(argv):
 
 def get_help(flag):
     match flag:
+        case '-h':
+            return "Shows this help screen."
         case '-s':
             return "Simulates the given input code in Python."
         case '-c':
@@ -767,23 +803,24 @@ def get_help(flag):
             return "Debug Mode: Parses the input code, prints the instructions, then exits."
         case '-o':
             return "Optimize the generated code. Only works in combination with `-c`."
-        case '-h':
-            return "Shows this help screen."
         case '-m':
             return "Mutes compilation command line output."
+        case '-a':
+            return "Keeps generated Assembly file after compilation."
         case _:
             return "[No description]"
 
 
 def get_usage(program_name):
     return f"Usage: {program_name} [-h] <input.hpt> " \
-           f"[-s | -c | -d] [-o, -m]\n" \
+           f"[-s | -c | -d] [-o, -m, -a]\n" \
            f"       If you need more help, run `{program_name} -h`"
 
 
 def main():
     # TODO: Add Strings, Arrays, Functions
-    flags = ['-h', '-s', '-c', '-d', '-o', '-m']
+    # TODO: Add Types
+    flags = ['-h', '-s', '-c', '-d', '-o', '-m', '-a']
     exec_flags = flags[1:4]
     optional_flags = flags[4:]
     opt_flags = dict(zip(optional_flags, [False] * len(optional_flags)))
@@ -835,7 +872,7 @@ def main():
     if run_flag == '-s':
         simulate_code(instructions, memory)
     elif run_flag == '-c':
-        compile_code(instructions, memory, labels, opt_flags)
+        compile_code(input_file, instructions, memory, labels, opt_flags)
     elif run_flag == '-d':
         for i, mem in enumerate(memory):
             print(mem[0] + ": " + mem[1] + " bytes")

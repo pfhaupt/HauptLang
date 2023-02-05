@@ -1,0 +1,15 @@
+mem
+  n 8
+  result 8
+  up_to 8
+end
+
+1 n !64
+1 result !64
+20 up_to !64
+
+while n ?64 up_to ?64 < do
+  result ?64 n ?64 * result !64
+  result ?64 print
+  n ?64 1 + n !64
+end

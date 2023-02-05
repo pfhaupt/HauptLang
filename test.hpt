@@ -1,20 +1,26 @@
+#mem
+#    count 8
+#    index 8
+#    arr 800
+#end
+#
+#100 count !64
+#
+#while index ?64 count ?64 < do
+#    index ?64
+#    arr index ?64 8 * + !64
+#    index ?64 1 + index !64
+#end
+#
+#0 index !64
+#
+#while index ?64 count ?64 < do
+#    arr index ?64 8 * + ?64 print
+#    index ?64 1 + index !64
+#end
+
 mem
-    count 8
-    index 8
-    arr 8000
+  a 8
 end
-
-1000 count !64
-
-while index ?64 count ?64 < do
-    index ?64
-    arr index ?64 8 * + !64
-    index ?64 1 + index !64
-end
-
-0 index !64
-
-while index ?64 count ?64 < do
-    arr index ?64 8 * + ?64 print
-    index ?64 1 + index !64
-end
+34 35 + a !64
+a ?64 print

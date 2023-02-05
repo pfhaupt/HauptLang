@@ -1,0 +1,19 @@
+mem
+  a 8
+  b 8
+  fib 8
+  n 8
+end
+
+1 a !64
+0 b !64
+1 fib !64
+0 n !64
+
+while n ?64 100 < do
+  a ?64 b ?64 + fib !64
+  b ?64 a !64
+  fib ?64 b !64
+  fib ?64 print
+  n ?64 1 + n !64
+end

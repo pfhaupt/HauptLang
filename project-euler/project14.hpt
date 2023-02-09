@@ -28,5 +28,5 @@ while index ?64 1000000 < do
     index ?64 1 + index !64
 end
 
-max ?64 print
-best ?64 print
+max ?64 puti
+best ?64 puti

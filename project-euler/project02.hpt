@@ -19,4 +19,4 @@ while fib ?64 4000000 < do
     end
 end
 
-result ?64 print
+result ?64 puti

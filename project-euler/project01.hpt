@@ -19,4 +19,4 @@ while index ?64 limit ?64 < do
     index ?64 1 + index !64
 end
 
-result ?64 print
+result ?64 puti

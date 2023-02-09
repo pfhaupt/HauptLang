@@ -15,11 +15,6 @@ end
 while n1 ?64 1000 < do
     100 n2 !64
     while n2 ?64 1000 < do
-#       while (n != 0) {
-#        remainder = n % 10;
-#        reversed = reversed * 10 + remainder;
-#        n /= 10;
-#        }
         n1 ?64 n2 ?64 * n !64
         n ?64 tmp !64
         0 reversed !64
@@ -39,4 +34,4 @@ while n1 ?64 1000 < do
     n1 ?64 1 + n1 !64
 end
 
-best ?64 print
+best ?64 puti

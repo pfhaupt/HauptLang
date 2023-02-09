@@ -10,6 +10,6 @@ end
 
 while n ?64 up_to ?64 < do
   result ?64 n ?64 * result !64
-  result ?64 print
+  result ?64 puti
   n ?64 1 + n !64
 end

@@ -3,17 +3,19 @@ mem
   b 8
   fib 8
   n 8
+  up_to 8
 end
 
 1 a !64
 0 b !64
 1 fib !64
 0 n !64
+20 up_to !64
 
-while n ?64 100 < do
+while n ?64 up_to ?64 < do
   a ?64 b ?64 + fib !64
   b ?64 a !64
   fib ?64 b !64
-  fib ?64 print
+  fib ?64 puti
   n ?64 1 + n !64
 end

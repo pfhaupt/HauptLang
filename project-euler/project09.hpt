@@ -39,4 +39,4 @@ while running ?64 do
     end
 end
 
-result ?64 print
+result ?64 puti

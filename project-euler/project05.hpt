@@ -20,7 +20,7 @@ while done ?64 0 == do
         index ?64 1 + index !64
     end
     if count ?64 up_to ?64 == do
-        n ?64 print
+        n ?64 puti
         1 done !64
     end
     n ?64 1 + n !64

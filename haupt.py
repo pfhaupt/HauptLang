@@ -38,12 +38,14 @@ class OpSet(Enum):
     ADD_PTR = auto()
     SUB_PTR = auto()
     PUSH_INT = auto()
+    PUSH_STR = auto()
     PUSH_PTR = auto()
+    PRINT_INT = auto()
+    PRINT_STR = auto()
     LT = auto()
     GT = auto()
     EQ = auto()
     NEQ = auto()
-    PRINT_INT = auto()
     SET_INT = auto()
     GET_INT = auto()
 
@@ -97,13 +99,37 @@ def get_lines(lines: List):
 
 def get_token_in_line(line: str):
     line = line.removesuffix("\n")
-    if line.startswith(COMMENT_CHAR):
+    if len(line) == 0:
         return []
     result = []
-    line = line.split(" ")
-    while '' in line:
-        line.remove('')
-    for col, token in enumerate(line):
+    parsed_token = []
+    buffer = ""
+    inside_str = False
+    index = 0
+    while index < len(line):
+        char = line[index]
+        if char == "\"":
+            if not inside_str:
+                assert len(buffer) == 0
+                inside_str = True
+                buffer += char
+            else:
+                inside_str = False
+                buffer += char
+                parsed_token.append(buffer)
+                buffer = ""
+        else:
+            if inside_str:
+                buffer += char
+            elif char == " ":
+                if len(buffer) > 0:
+                    parsed_token.append(buffer)
+                    buffer = ""
+            else:
+                buffer += char
+        index += 1
+    parsed_token.append(buffer)
+    for col, token in enumerate(parsed_token):
         result.append((col, token))
     return result
 
@@ -118,8 +144,12 @@ def load_from_file(file_path: str):
 def parse_op(op: str, memory: List):
     other_info = op
     op = op[3]
-    assert len(OpSet) == 22, "Not all OP can be parsed yet"
-    if op == "rot":
+    assert len(OpSet) == 24, "Not all OP can be parsed yet"
+    if (op.startswith("-") and op[1:].isdigit()) or op.isdigit():
+        op = OpSet.PUSH_INT, (Types.INT, int(op))
+    elif op.startswith("\"") and op.endswith("\""):
+        op = OpSet.PUSH_STR, (Types.STR, op[1:-1])
+    elif op == "rot":
         op = OpSet.ROT,
     elif op == "dup":
         op = OpSet.DUP,
@@ -143,10 +173,10 @@ def parse_op(op: str, memory: List):
         op = OpSet.DIV_INT,
     elif op == '%':
         op = OpSet.MOD_INT,
-    elif op == "print":
+    elif op == "puti":
         op = OpSet.PRINT_INT,
-    elif (op.startswith("-") and op[1:].isdigit()) or op.isdigit():
-        op = OpSet.PUSH_INT, (Types.INT, int(op))
+    elif op == "puts":
+        op = OpSet.PRINT_STR,
     elif op == "==":
         op = OpSet.EQ,
     elif op == "!=":
@@ -213,14 +243,32 @@ def parse_instructions(code: List):
                 memory.append(code[memory_index])
                 memory_index += 1
             memory.append(code[memory_index])
+
     new_code = []
     for op in code:
         if op not in memory:
             new_code.append(op)
-
     instructions = [parse_op(op, memory) for op in new_code]
 
-    return instructions, memory
+    strings = []
+    index = 0
+    string_counter = 0
+    while index < len(instructions):
+        op = instructions[index]
+        operation = op[3]
+        if operation[0] == OpSet.PUSH_STR:
+            typed_operand = operation[1]
+            string = typed_operand[1]
+            label = f"str_{string_counter}"
+            file_name = op[0]
+            row = op[1]
+            col = op[2]
+            oper = op[3]
+            instructions[index] = (file_name, row, col, (oper[0], (Types.STR, label)))
+            strings.append((label, string))
+            string_counter += 1
+        index += 1
+    return instructions, memory, strings
     # return [parse_op(op) for op in code]
 
 
@@ -299,7 +347,7 @@ def cross_reference(instructions):
 
 
 def type_check_program(instructions):
-    assert len(OpSet) == 22, "Not all Operations are handled in type checking"
+    assert len(OpSet) == 24, "Not all Operations are handled in type checking"
     assert len(Keywords) == 5, "Not all Keywords are handled in type checking"
     assert len(Types) == 3, "Not all Types are handled in type checking"
     stack = []
@@ -308,7 +356,13 @@ def type_check_program(instructions):
         op = instr[3]
         operator = op[0]
         if operator in OpSet:
-            if operator == OpSet.DROP:
+            if operator == OpSet.PUSH_INT:
+                stack.append(Types.INT)
+            elif operator == OpSet.PUSH_PTR:
+                stack.append(Types.PTR)
+            elif operator == OpSet.PUSH_STR:
+                stack.append(Types.STR)
+            elif operator == OpSet.DROP:
                 if len(stack) < 1:
                     print_compiler_error("Not enough operands for operation",
                                          f"{get_instruction_location(instr)}: {operator} expected 1 argument, found {len(stack)} instead: {stack}\n")
@@ -356,10 +410,6 @@ def type_check_program(instructions):
                     stack.append(type2)
                     stack.append(type1)
                     # type2 type1
-            elif operator == OpSet.PUSH_INT:
-                stack.append(Types.INT)
-            elif operator == OpSet.PUSH_PTR:
-                stack.append(Types.PTR)
             elif operator in [OpSet.ADD_INT, OpSet.SUB_INT, OpSet.MUL_INT, OpSet.DIV_INT, OpSet.MOD_INT] or operator in [OpSet.LT, OpSet.GT, OpSet.EQ, OpSet.NEQ]:
                 if len(stack) < 2:
                     print_compiler_error("Not enough operands for operation",
@@ -412,7 +462,7 @@ def type_check_program(instructions):
             elif operator == OpSet.PRINT_INT:
                 if len(stack) < 1:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{get_instruction_location(instr)}: {operator} expected 2 arguments, found {len(stack)} instead: {stack}\n")
+                                         f"{get_instruction_location(instr)}: {operator} expected 1 argument, found {len(stack)} instead: {stack}\n")
                 else:
                     type1 = stack.pop()
                     if type1 == Types.INT:
@@ -420,6 +470,18 @@ def type_check_program(instructions):
                     else:
                         print_compiler_error("Wrong types for operation",
                                              f"{get_instruction_location(instr)}: {operator} expected {[Types.INT]}, found {type1} instead.")
+            elif operator == OpSet.PRINT_STR:
+                if len(stack) < 1:
+                    print_compiler_error("Not enough operands for operation",
+                                         f"{get_instruction_location(instr)}: {operator} expected 1 argument, found {len(stack)} instead: {stack}\n")
+                else:
+                    type1 = stack.pop()
+                    if type1 == Types.STR:
+                        pass
+                    else:
+                        print_compiler_error("Wrong types for operation",
+                                             f"{get_instruction_location(instr)}: {operator} expected {[Types.INT]}, found {type1} instead.")
+
             else:
                 assert False, f"Not implemented type checking for {operator} yet"
         elif operator in Keywords:
@@ -440,7 +502,7 @@ def type_check_program(instructions):
                     assert False, f"{pre_do} type-checking for Keywords.DO not implemented yet"
             elif operator == Keywords.ELSE:
                 block = keyword_stack.pop()
-                block_ip = block[0]
+                # block_ip = block[0]
                 block_instr = block[1]
                 block_keyword = block_instr[3][0]
                 block_stack = block[2]
@@ -449,7 +511,7 @@ def type_check_program(instructions):
                 stack = block_stack.copy()
             elif operator == Keywords.END:
                 block = keyword_stack.pop()
-                block_ip = block[0]
+                # block_ip = block[0]
                 block_instr = block[1]
                 block_keyword = block_instr[3][0]
                 block_stack = block[2]
@@ -513,7 +575,7 @@ def type_check_program(instructions):
 def evaluate_static_equations(instructions):
     # optimizes instructions like "10 2 1 3 * 4 5 * + - 2 * 7 - + 5 * 15"
     # by evaluating them in the pre-compiler phase and only pushing the result
-    assert len(OpSet) == 22, "Make sure that `stack_op` in" \
+    assert len(OpSet) == 24, "Make sure that `stack_op` in" \
                              "`evaluate_static_equations()` is up to date."
     # Last OP in our instruction set that is arithmetic
     # All Enum values less than that are available to be pre-evaluated
@@ -521,7 +583,7 @@ def evaluate_static_equations(instructions):
     instr_stack = []
     for op in instructions:
         instr = op[3]
-        if instr[0] in [OpSet.ADD_INT, OpSet.SUB_INT, OpSet.MUL_INT, OpSet.DIV_INT, OpSet.MOD_INT]:
+        if instr[0] in [OpSet.PUSH_INT, OpSet.ADD_INT, OpSet.SUB_INT, OpSet.MUL_INT, OpSet.DIV_INT, OpSet.MOD_INT]:
             instr_stack.append(op)
         else:
             if len(instr_stack) > 0:
@@ -700,8 +762,8 @@ def simulate_code(instructions, mem):
 # Create Obj file: nasm -f win64 output.asm -o output.obj
 # Link Obj together: golink /no /console /entry main output.obj MSVCRT.dll kernel32.dll
 # Call Program: output.exe
-def compile_code(program_name, instructions, memory, labels, opt_flags: dict):
-    assert len(OpSet) == 22, "Not all OP can be compiled yet"
+def compile_code(program_name, instructions, memory, strings, labels, opt_flags: dict):
+    assert len(OpSet) == 24, "Not all OP can be compiled yet"
     assert len(Keywords) == 5, "Not all Keywords can be compiled yet"
     silenced = opt_flags['-m']
     optimized = opt_flags['-o']
@@ -716,6 +778,20 @@ def compile_code(program_name, instructions, memory, labels, opt_flags: dict):
         output.write("  format_string db \"%lld\", 0xd, 0xa, 0\n")
         output.write("  true db 1\n"
                      "  false db 0\n")
+        for label, value in strings:
+            hex_value = ""
+            char_index = 0
+            while char_index < len(value):
+                char = value[char_index]
+                if char == "\\":
+                    if char_index + 1 < len(value) and value[char_index + 1] == "n":
+                        hex_value += "13, 10, "
+                        char_index += 1
+                else:
+                    hex_value += str(ord(char)) + ", "
+                char_index += 1
+            hex_value += "0\n"
+            output.write(f"  {label} db {hex_value}")
         output.write("\n")
         output.write("segment .bss\n")
         for var in memory:
@@ -767,6 +843,9 @@ def compile_code(program_name, instructions, memory, labels, opt_flags: dict):
                 elif op[0] == OpSet.PUSH_PTR:
                     value = op[1][1]
                     output.write(f"  push {value}\n")
+                elif op[0] == OpSet.PUSH_STR:
+                    value = op[1][1]
+                    output.write(f"  push {value}\n")
                 elif op[0] == OpSet.ADD_INT or op[0] == OpSet.ADD_PTR:
                     output.write("  pop rax\n")
                     output.write("  pop rbx\n")
@@ -802,6 +881,15 @@ def compile_code(program_name, instructions, memory, labels, opt_flags: dict):
                                  "  sub rsp, 32\n")
                     output.write("  mov rdx, rax\n")
                     output.write("  lea rcx, [format_string]\n")
+                    output.write("  call printf\n")
+                    output.write("  add rsp, 32\n"
+                                 "  pop rbp\n")
+                elif op[0] == OpSet.PRINT_STR:
+                    output.write("  pop rax\n")
+                    output.write("  push rbp\n"
+                                 "  mov rbp, rsp\n"
+                                 "  sub rsp, 32\n")
+                    output.write("  lea rcx, [rax]\n")
                     output.write("  call printf\n")
                     output.write("  add rsp, 32\n"
                                  "  pop rbp\n")
@@ -886,7 +974,7 @@ def compile_code(program_name, instructions, memory, labels, opt_flags: dict):
         print(f"[INFO] Generated {name}.tmp")
 
     if optimized:
-        registers = ["rax", "rbx", "rcx", "rdx", "rbp"]
+        # registers = ["rax", "rbx", "rcx", "rdx", "rbp"]
         optimized = []
         not_done = []
         with open(f"{name}.tmp", "r") as unoptimized:
@@ -1070,7 +1158,7 @@ def main():
         print_compiler_error("Third Parameter has to be an execution flag!",
                              get_usage(program_name))
 
-    instructions, memory = parse_instructions(code)
+    instructions, memory, strings = parse_instructions(code)
     instructions, labels = cross_reference(instructions)
     instructions = type_check_program(instructions)
     instructions = evaluate_static_equations(instructions)
@@ -1089,7 +1177,7 @@ def main():
     if run_flag == '-s':
         simulate_code(instructions, memory)
     elif run_flag == '-c':
-        compile_code(input_file, instructions, memory, labels, opt_flags)
+        compile_code(input_file, instructions, memory, strings, labels, opt_flags)
     elif run_flag == '-d':
         for i, mem in enumerate(memory):
             print(mem[0] + ": " + mem[1] + " bytes")

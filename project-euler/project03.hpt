@@ -9,7 +9,7 @@ end
 while factor ?64 n ?64 1 + < do
     if n ?64 factor ?64 % 0 == do
         n ?64 factor ?64 / n !64
-        factor ?64 print
+        factor ?64 puti
     else
         factor ?64 1 + factor !64
     end

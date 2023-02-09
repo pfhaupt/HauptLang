@@ -9,11 +9,10 @@ This project is inspired by [Porth](https://www.youtube.com/watch?v=8QP2fDBIxjM&
 
 ## Milestones/Roadmap
 - [x] Compiled into a [Windows Executable](https://en.wikipedia.org/wiki/Portable_Executable)
-- [ ] Functions, Arrays, String support
-- [ ] Type system (Only Integers are supported right now)
+- [x] Typed (Strings, Integers, Pointers)
+- [ ] Functions, Arrays
 - [ ] Self-hosting
 - [ ] Optimizations
-- [ ] Cross-Platform support
 
 ## Content
 ### haupt.py
@@ -39,18 +38,20 @@ So make sure you have both of those tools available in your %PATH%.
 
 ```console
 > readme.hpt
-42 print
-10 5 + print
+42 puti
+10 5 + puti
+"Hello World!\n" puts
 ```
 ```console
 > haupt.py readme.hpt -c
 [compilation logs]
-[generated output.exe]
+[generated readme.exe]
 ```
 ```console
-> output.exe
+> readme.exe
 42
 15
+Hello World!
 ```
 
 ### Testing

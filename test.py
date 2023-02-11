@@ -7,6 +7,10 @@ import time
 
 colorama.init()
 
+# python -m timeit -s "import subprocess" "subprocess.call([\"python\", \"test.py\"])"
+# runs the test script multiple times and reports the average time
+# Take it with a grain of salt, it has some overhead (~10% from what I've seen)
+
 
 def call_cmd(cmd: List):
     print(Fore.CYAN + "[CMD] " + " ".join(cmd) + Style.RESET_ALL)
@@ -56,6 +60,7 @@ def main():
 
     print("Total Compilation time: {:.2f}ms.".format(total_compile_time))
     print("Total Execution time: {:.2f}ms.".format(total_execution_time))
+    print("Total time: {:.2f}ms.".format(total_execution_time + total_compile_time))
     print(Fore.GREEN + "All Tests passed!" + Style.RESET_ALL)
 
 

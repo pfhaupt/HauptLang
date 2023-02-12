@@ -765,97 +765,6 @@ def evaluate_static_equations(instructions: List[Instruction]):
     return new_code
 
 
-def simulate_code(instructions, mem):
-    assert len(OpSet) == 19, "Not all OP can be simulated yet"
-    stack = []
-    memory = {}
-    for m in mem:
-        memory[m[0]] = 0
-    index = 0
-    while index < len(instructions):
-        op = instructions[index][3]
-        if op in memory:
-            stack.append(op)
-            index += 1
-        elif op[0] == OpSet.PUSH:
-            stack.append(op[1])
-            index += 1
-        elif op[0] == OpSet.ADD_INT:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(a + b)
-            index += 1
-        elif op[0] == OpSet.SUB_INT:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(b - a)
-            index += 1
-        elif op[0] == OpSet.MUL_INT:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(a * b)
-            index += 1
-        elif op[0] == OpSet.DIV_INT:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(int(b / a))
-            index += 1
-        elif op[0] == OpSet.MOD_INT:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(int(b % a))
-            index += 1
-        elif op[0] == OpSet.PRINT_INT:
-            print(stack.pop())
-            index += 1
-        elif op[0] == OpSet.IF or op[0] == OpSet.WHILE:
-            index += 1
-            pass
-        elif op[0] == OpSet.SET_INT:
-            variable = stack.pop()
-            value = stack.pop()
-            memory[variable] = value
-            index += 1
-        elif op[0] == OpSet.GET_INT:
-            variable = stack.pop()
-            value = memory[variable]
-            stack.append(value)
-            index += 1
-        elif op[0] == OpSet.EQ:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(int(a == b))
-            index += 1
-        elif op[0] == OpSet.NEQ:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(int(a != b))
-            index += 1
-        elif op[0] == OpSet.LT:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(int(b < a))
-            index += 1
-        elif op[0] == OpSet.GT:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(int(b > a))
-            index += 1
-        elif op[0] == OpSet.DO:
-            a = stack.pop()
-            if a == 0:
-                index += op[2]
-            index += 1
-        elif op[0] == OpSet.END:
-            index += op[1]
-        elif op[0] == OpSet.ELSE:
-            index += op[1]
-            index += 1
-        else:
-            print_compiler_error("Unknown operation!",
-                                 f"Can't simulate unknown op {op}")
-
-
 # Create Obj file: nasm -f win64 output.asm -o output.obj
 # Link Obj together: golink /no /console /entry main output.obj MSVCRT.dll kernel32.dll
 # Call Program: output.exe
@@ -1199,8 +1108,6 @@ def get_help(flag):
     match flag:
         case '-h':
             return "Shows this help screen."
-        case '-s':
-            return "Simulates the given input code in Python."
         case '-c':
             return "Compiles the given input code and generates a single executable."
         case '-d':
@@ -1217,15 +1124,15 @@ def get_help(flag):
 
 def get_usage(program_name):
     return f"Usage: {program_name} [-h] <input.hpt> " \
-           f"[-s | -c | -d] [-o, -m, -a]\n" \
+           f"[-c | -d] [-o, -m, -a]\n" \
            f"       If you need more help, run `{program_name} -h`"
 
 
 def main():
     # TODO: Add Strings, Arrays, Functions
-    flags = ['-h', '-s', '-c', '-d', '-o', '-m', '-a']
-    exec_flags = flags[1:4]
-    optional_flags = flags[4:]
+    flags = ['-h', '-c', '-d', '-o', '-m', '-a']
+    exec_flags = flags[1:3]
+    optional_flags = flags[3:]
     opt_flags = dict(zip(optional_flags, [False] * len(optional_flags)))
     program_name, sys.argv = shift(sys.argv)
     program_name = program_name.split("\\")[-1]
@@ -1269,9 +1176,7 @@ def main():
             else:
                 opt_flags[opt] = True
 
-    if run_flag == '-s':
-        simulate_code(instructions, memory)
-    elif run_flag == '-c':
+    if run_flag == '-c':
         compile_code(input_file, instructions, memory, strings, labels, opt_flags)
     elif run_flag == '-d':
         for i, mem in enumerate(memory):

@@ -11,10 +11,22 @@ from colorama import Fore, Style
 colorama.init()
 
 
+COMMENT_CHAR = "#"
+PROC_IO_SEP = "->"
+
+
 class Type(Enum):
     INT = auto()
     PTR = auto()
     STR = auto()
+
+
+assert len(Type) == 3, "Not all Types are in the lookup table yet!"
+TYPES_LOOKUP: dict[str, Type] = {
+    "int": Type.INT,
+    "str": Type.STR,
+    "ptr": Type.PTR,
+}
 
 
 @dataclass
@@ -67,9 +79,16 @@ class OpSet(Enum):
     NEQ = auto()
     SET_INT = auto()
     GET_INT = auto()
+    SET_BYTE = auto()
+    GET_BYTE = auto()
+    CALL_PROC = auto()
+    PREP_PROC = auto()
+    RET_PROC = auto()
+    PUSH_GLOBAL_MEM = auto()
+    PUSH_LOCAL_MEM = auto()
 
 
-assert len(OpSet) == 24, "Not all Operations are in the lookup table yet!"
+assert len(OpSet) == 31, "Not all Operations are in the lookup table yet!"
 INTRINSIC_LOOKUP: dict[str, OpSet] = {
     "nop": OpSet.NOP,
     "dup": OpSet.DUP,
@@ -95,6 +114,8 @@ INTRINSIC_LOOKUP: dict[str, OpSet] = {
     "!=": OpSet.NEQ,
     "!64": OpSet.SET_INT,
     "?64": OpSet.GET_INT,
+    "!8": OpSet.SET_BYTE,
+    "?8": OpSet.GET_BYTE,
 }
 
 
@@ -105,17 +126,19 @@ class Keyword(Enum):
     END = auto()
     WHILE = auto()
     MEMORY = auto()
+    PROC = auto()
 
 
-assert len(Keyword) == 6, "Not all Keywords are in the lookup table yet!"
 KEYWORD_LOOKUP: dict[str, Keyword] = {
     "if": Keyword.IF,
     "else": Keyword.ELSE,
     "do": Keyword.DO,
     "end": Keyword.END,
     "while": Keyword.WHILE,
-    "memory": Keyword.MEMORY
+    "memory": Keyword.MEMORY,
+    "proc": Keyword.PROC,
 }
+assert len(Keyword) == len(KEYWORD_LOOKUP), "Not all Keywords are in the lookup table yet!"
 
 
 @dataclass
@@ -155,7 +178,14 @@ class Memory:
         return f"{self.loc}: {self.name} has a size of {self.size} bytes."
 
 
-COMMENT_CHAR = "#"
+@dataclass
+class Procedure:
+    name: str
+    start: int
+    end: int
+    local_mem: List[Memory]
+    mem_size: int
+    signature: Signature
 
 
 def get_instruction_location(instruction):
@@ -248,9 +278,9 @@ def load_from_file(file_path: str):
                 for (col, token) in get_token_in_line(line.split(COMMENT_CHAR)[0])]
 
 
-def parse_memory_block(code: List[Instruction], ip: int, global_memory: List[Memory]):
+def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory]):
     # Syntax: memory variable byte_count end
-    if len(code) - (ip + 1) < 3:
+    if len(code) - ip < 4:
         # we need 4 words for each block
         # ip points at number 1
         print_compiler_error("Not enough words for memory block")
@@ -314,12 +344,66 @@ def parse_memory_block(code: List[Instruction], ip: int, global_memory: List[Mem
     return ip, Memory(loc=variable.loc, name=variable_name, size=size)
 
 
-def parse_instructions(code: List[Instruction]):
+def parse_procedure_signature(code: List[Token], ip: int):
+    if len(code) - ip < 4:
+        # we need *at minimum* 4 words for a valid procedure: proc name do end
+        # ip points at number 1
+        print_compiler_error("Not enough words for procedure signature")
+    ip += 1
+    proc_name_token: Token = code[ip]
+    proc_name = proc_name_token.name
+    # print(proc_name_token)
+    ip += 1
+    next_token: Token = code[ip]
+    inputs: List[Type] = []
+    outputs: List[Type] = []
+    found_sep = False
+    sep_loc: Location = None
+
+    types = "[" + ", ".join(TYPES_LOOKUP) + "]"
+    while next_token.name != "do":
+        if not found_sep:
+            # haven't found PROC_IO_SEP yet, we are parsing inputs
+            if next_token.name == PROC_IO_SEP:
+                found_sep = True
+                sep_loc = next_token.loc
+            elif next_token.name in TYPES_LOOKUP:
+                inputs.append(TYPES_LOOKUP[next_token.name])
+            else:
+                print_compiler_error("Invalid word found",
+                                     f"{next_token.loc}: Found {next_token.name}, expected one of {types}")
+        else:
+            if next_token.name == PROC_IO_SEP:
+                print_compiler_error("Unexpected word",
+                                     f"{next_token.loc}: Expected only one separator in procedure signature, found two.\n"
+                                     f"Separator already found here: {sep_loc}")
+            elif next_token.name in TYPES_LOOKUP:
+                outputs.append(TYPES_LOOKUP[next_token.name])
+            else:
+                print_compiler_error("Invalid word found",
+                                     f"{next_token.loc}: Found {next_token.name}, expected one of {types}")
+
+        ip += 1
+        if ip >= len(code):
+            print_compiler_error("Missing `do` for procedure",
+                                 f"{proc_name_token.loc}: Missing `do` for procedure `{proc_name_token.name}`")
+        next_token: Token = code[ip]
+
+    proc_signature: Signature = Signature(inputs=inputs, outputs=outputs)
+    ip -= 1
+    return ip, proc_name, proc_signature
+
+
+def parse_instructions(code: List[Token]):
     global_memory: List[Memory] = []
+    procedures: dict[str, Procedure] = {}
     strings: List[tuple] = []
     instructions: List[Instruction] = []
     keyword_stack: List[tuple] = []
     jump_labels: List[DataTuple] = []
+
+    inside_proc: bool = False
+    current_proc: str = ""
 
     ip = 0
     while ip < len(code):
@@ -335,9 +419,37 @@ def parse_instructions(code: List[Instruction]):
             # print(f"Found keyword {name}")
             if name == "memory":
                 ip, memory_unit = parse_memory_block(code, ip, global_memory)
-                global_memory.append(memory_unit)
+                if inside_proc:
+                    print_compiler_error("Local memory is not supported yet",
+                                         f"{location}: Unexpected word.")
+                    assert current_proc in procedures, "This might be a bug in parsing"
+                    word = Operation(operation=OpSet.PUSH_LOCAL_MEM, operand=DataTuple(typ=Type.INT, value=len(procedures[current_proc].local_mem)))
+                    op = Instruction(loc=location, word=word)
 
-                word = Operation(operation=KEYWORD_LOOKUP[name], operand=None)
+                    procedures[current_proc].local_mem.append(memory_unit)
+                    procedures[current_proc].mem_size += memory_unit.size
+                else:
+                    word = Operation(operation=OpSet.PUSH_GLOBAL_MEM, operand=DataTuple(typ=Type.INT, value=len(global_memory)))
+                    op = Instruction(loc=location, word=word)
+                    global_memory.append(memory_unit)
+
+            elif name == "proc":
+                if inside_proc:
+                    print_compiler_error("Unexpected word",
+                                         f"{location}: You can't define procedures inside other procedures.")
+                ip, proc_name, proc_signature = parse_procedure_signature(code, ip)
+                if proc_name in procedures:
+                    print_compiler_error("Procedure redefinition",
+                                         f"{location}: Procedure is already defined here: {procedures[proc_name]}")
+                else:
+                    proc_ip = len(instructions) + 1
+                    procedure: Procedure = Procedure(name=proc_name, signature=proc_signature, local_mem=[], mem_size=0, start=proc_ip, end=proc_ip)
+                    procedures[proc_name] = procedure
+                    inside_proc = True
+                    current_proc = proc_name
+                keyword_stack.append((len(instructions), token))
+
+                word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.STR, value=proc_name))
                 op = Instruction(loc=location, word=word)
             elif name == "while" or name == "if":
                 keyword_stack.append((len(instructions), token))
@@ -352,13 +464,17 @@ def parse_instructions(code: List[Instruction]):
                 pre_do_ip: int = pre_do[0]
                 pre_do_keyword: Token = pre_do[1]
                 if pre_do_keyword.name == "while" or pre_do_keyword.name == "if":
+                    word = Operation(operation=KEYWORD_LOOKUP[name], operand=None)
+                    keyword_stack.append(((len(instructions), token), pre_do))
+                elif pre_do_keyword.name == "proc":
+                    word = Operation(operation=OpSet.PREP_PROC, operand=DataTuple(typ=Type.STR, value=current_proc))
                     keyword_stack.append(((len(instructions), token), pre_do))
                 else:
+                    word = None
                     print_compiler_error("Unexpected keyword in parsing",
-                                         f"{pre_do_keyword.loc}: Expected to be while or if.\n"
+                                         f"{pre_do_keyword.loc}: Expected to be while, if or proc.\n"
                                          f"Found: {pre_do_keyword.name}")
 
-                word = Operation(operation=KEYWORD_LOOKUP[name], operand=None)
                 op = Instruction(loc=location, word=word)
             elif name == "else":
                 if len(keyword_stack) < 1:
@@ -394,8 +510,14 @@ def parse_instructions(code: List[Instruction]):
                 # pre_do_keyword: Token = pre_do[1]
                 pre_do_operation: Keyword = instructions[pre_do_ip].word.operation
 
-                assert pre_end_operation == Keyword.DO or pre_end_operation == Keyword.ELSE, "This is a bug in the parsing step"
-                if pre_end_operation == Keyword.DO:
+                assert pre_end_operation == OpSet.PREP_PROC or pre_end_operation == Keyword.DO or pre_end_operation == Keyword.ELSE, "This might be a bug in the parsing step"
+                if pre_end_operation == OpSet.PREP_PROC:
+                    assert current_proc in procedures, "This might be a bug in parsing"
+                    procedures[current_proc].end = len(instructions)
+                    word = Operation(operation=OpSet.RET_PROC, operand=DataTuple(typ=Type.INT, value=procedures[current_proc].mem_size))
+                    op = Instruction(loc=location, word=word)
+                    inside_proc = False
+                elif pre_end_operation == Keyword.DO:
                     instructions[pre_end_ip].word.operand = DataTuple(typ=Type.INT, value=len(instructions) - pre_end_ip)
                     if pre_do_operation == Keyword.IF:
                         word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.INT, value=1))
@@ -438,13 +560,22 @@ def parse_instructions(code: List[Instruction]):
                     op = Instruction(loc=location, word=word)
                     is_mem = True
                     break
-            if not is_mem:
+
+            is_proc = False
+            if name in procedures:
+                jmp_ip = procedures[name].start
+                word = Operation(operation=OpSet.CALL_PROC, operand=DataTuple(typ=Type.INT, value=jmp_ip))
+                op = Instruction(loc=location, word=word)
+                is_proc = True
+
+            if not is_mem and not is_proc:
                 print_compiler_error("Unknown Token in Parsing",
                                      f"{token} can't be parsed.")
         instructions.append(op)
         ip += 1
 
     for i, op in enumerate(instructions):
+        # print(i, op)
         operation: Operation = op.word.operation
         operand: DataTuple = op.word.operand
         if operation in [Keyword.ELSE, Keyword.DO]:
@@ -453,7 +584,15 @@ def parse_instructions(code: List[Instruction]):
             if operand.value != 1:
                 jump_labels.append(DataTuple(typ=Type.INT, value=operand.value + i + 1))
 
-    return instructions, global_memory, strings, jump_labels
+    for proc in procedures:
+        # print(proc)
+        jump_labels.append(DataTuple(typ=Type.INT, value=procedures[proc].start))
+        jump_labels.append(DataTuple(typ=Type.INT, value=procedures[proc].end + 1))
+    #
+    # for i, lbl in enumerate(jump_labels):
+    #     print(i, lbl)
+    # exit(1)
+    return instructions, procedures, global_memory, strings, jump_labels
     # return [parse_op(op) for op in code]
 
 
@@ -691,7 +830,7 @@ def type_check_program(instructions: List[Instruction]):
 def evaluate_static_equations(instructions: List[Instruction]):
     # optimizes instructions like "10 2 1 3 * 4 5 * + - 2 * 7 - + 5 * 15"
     # by evaluating them in the pre-compiler phase and only pushing the result
-    assert len(OpSet) == 24, "Make sure that `stack_op` in" \
+    assert len(OpSet) == 31, "Make sure that `stack_op` in" \
                              "`evaluate_static_equations()` is up to date."
     # Last OP in our instruction set that is arithmetic
     # All Enum values less than that are available to be pre-evaluated
@@ -768,9 +907,9 @@ def evaluate_static_equations(instructions: List[Instruction]):
 # Create Obj file: nasm -f win64 output.asm -o output.obj
 # Link Obj together: golink /no /console /entry main output.obj MSVCRT.dll kernel32.dll
 # Call Program: output.exe
-def compile_code(program_name: str, instructions: List[Instruction], memory: List[Memory], strings: List[tuple], labels: List[DataTuple], opt_flags: dict):
-    assert len(OpSet) == 24, "Not all OP can be compiled yet"
-    assert len(Keyword) == 6, "Not all Keywords can be compiled yet"
+def compile_code(program_name: str, instructions: List[Instruction], procedures: dict[str, Procedure], memory: List[Memory], strings: List[tuple], labels: List[DataTuple], opt_flags: dict):
+    assert len(OpSet) == 31, "Not all OP can be compiled yet"
+    assert len(Keyword) == 7, "Not all Keywords can be compiled yet"
     silenced = opt_flags['-m']
     optimized = opt_flags['-o']
     keep_asm = opt_flags['-a']
@@ -780,35 +919,13 @@ def compile_code(program_name: str, instructions: List[Instruction], memory: Lis
         output.write(f"  ; Generated code for {program_name}\n")
         output.write("default rel\n")
         output.write("\n")
-        output.write("segment .data\n")
-        output.write("  format_string db \"%lld\", 0xd, 0xa, 0\n")
-        output.write("  true db 1\n"
-                     "  false db 0\n")
-        for label, value in strings:
-            hex_value = ""
-            char_index = 0
-            while char_index < len(value):
-                char = value[char_index]
-                if char == "\\":
-                    if char_index + 1 < len(value) and value[char_index + 1] == "n":
-                        hex_value += "13, 10, "
-                        char_index += 1
-                else:
-                    hex_value += str(ord(char)) + ", "
-                char_index += 1
-            hex_value += "0\n"
-            output.write(f"  {label} db {hex_value}")
-        output.write("\n")
-        output.write("segment .bss\n")
-        for var in memory:
-            output.write(f"  {var.name} resb {var.size}\n")
-        output.write("\n")
         output.write("segment .text\n"
                      "  global main\n"
                      "  extern ExitProcess\n"
                      "  extern printf\n")
         output.write("\n")
         output.write("main:\n")
+        output.write("  mov qword [ret_stack_rsp], ret_stack\n")
         output.write("  push rbp\n"
                      "  mov rbp, rsp\n"
                      "  sub rsp, 32\n")
@@ -947,6 +1064,41 @@ def compile_code(program_name: str, instructions: List[Instruction], memory: Lis
                     output.write(f"  mov rbx, [rax]\n")
                     # rbx contains value of var
                     output.write("  push rbx\n")
+                elif operation == OpSet.SET_BYTE:
+                    # value var set_int
+                    output.write("  pop rax\n")
+                    # rax contains var
+                    output.write("  pop rbx\n")
+                    # rbx contains val
+                    output.write("  mov [rax], bl\n")
+                elif operation == OpSet.GET_BYTE:
+                    # var get_int
+                    output.write("    pop rax\n")
+                    # rax contains ptr to var
+                    output.write("    xor rbx, rbx\n")
+                    output.write("    mov bl, [rax]\n")
+                    # rbx contains value of var
+                    output.write("    push rbx\n")
+                elif operation == OpSet.CALL_PROC:
+                    proc_start = op.word.operand.value
+                    output.write("  mov rax, rsp\n")
+                    output.write("  mov rsp, [ret_stack_rsp]\n")
+                    output.write(f"  call {label_name}_{proc_start}\n")
+                    output.write("  mov [ret_stack_rsp], rsp\n")
+                    output.write("  mov rsp, rax\n")
+                elif operation == OpSet.PREP_PROC:
+                    output.write("  sub rsp, 32\n")
+                    output.write("  mov [ret_stack_rsp], rsp\n")
+                    output.write("  mov rsp, rax\n")
+                elif operation == OpSet.RET_PROC:
+                    output.write("  mov rax, rsp\n")
+                    output.write("  mov rsp, [ret_stack_rsp]\n")
+                    output.write("  add rsp, 32\n")
+                    output.write("  ret\n")
+                elif operation == OpSet.PUSH_LOCAL_MEM:
+                    assert False, "PUSH_LOCAL_MEM can't be compiled yet"
+                elif operation == OpSet.PUSH_GLOBAL_MEM:
+                    pass
                 else:
                     assert False, f"Unreachable - This means that an operation can't be compiled yet, namely: {operation}"
             elif operation in Keyword:
@@ -969,6 +1121,11 @@ def compile_code(program_name: str, instructions: List[Instruction], memory: Lis
                     else:
                         end_goal = i + op.word.operand.value + 1
                         output.write(f"  jmp {label_name}_{end_goal}\n")
+                elif operation == Keyword.PROC:
+                    proc = procedures[operand.value]
+                    output.write(f"  jmp {label_name}_{proc.end + 1}\n")
+                else:
+                    assert False, f"Unreachable - This means that a keyword can't be compiled yet, namely: {operation}"
             else:
                 print_compiler_error(f"Compilation failed",
                                      f"at {location}: {operation} can't be compiled yet.")
@@ -976,6 +1133,32 @@ def compile_code(program_name: str, instructions: List[Instruction], memory: Lis
         output.write(f"{label_name}_{len(instructions)}:\n")
         output.write("  xor rcx, rcx\n")
         output.write("  call ExitProcess\n")
+        output.write("\n")
+        output.write("segment .data\n")
+        output.write("  format_string db \"%lld\", 0xd, 0xa, 0\n")
+        output.write("  true db 1\n"
+                     "  false db 0\n")
+        for label, value in strings:
+            hex_value = ""
+            char_index = 0
+            while char_index < len(value):
+                char = value[char_index]
+                if char == "\\":
+                    if char_index + 1 < len(value) and value[char_index + 1] == "n":
+                        hex_value += "13, 10, "
+                        char_index += 1
+                else:
+                    hex_value += str(ord(char)) + ", "
+                char_index += 1
+            hex_value += "0\n"
+            output.write(f"  {label} db {hex_value}")
+        output.write("\n")
+        output.write("segment .bss\n")
+        output.write("  ret_stack resb 4096\n")
+        output.write("  ret_stack_rsp resb 8\n")
+        for var in memory:
+            output.write(f"  {var.name} resb {var.size}\n")
+        output.write("\n")
 
     if not silenced:
         print(f"[INFO] Generated {name}.tmp")
@@ -1118,19 +1301,21 @@ def get_help(flag):
             return "Mutes compilation command line output."
         case '-a':
             return "Keeps generated Assembly file after compilation."
+        case '-unsafe':
+            return "Disables type checking."
         case _:
             return "[No description]"
 
 
 def get_usage(program_name):
     return f"Usage: {program_name} [-h] <input.hpt> " \
-           f"[-c | -d] [-o, -m, -a]\n" \
+           f"[-c | -d] [-o, -m, -a, -unsafe]\n" \
            f"       If you need more help, run `{program_name} -h`"
 
 
 def main():
     # TODO: Add Strings, Arrays, Functions
-    flags = ['-h', '-c', '-d', '-o', '-m', '-a']
+    flags = ['-h', '-c', '-d', '-o', '-m', '-a', '-unsafe']
     exec_flags = flags[1:3]
     optional_flags = flags[3:]
     opt_flags = dict(zip(optional_flags, [False] * len(optional_flags)))
@@ -1141,8 +1326,9 @@ def main():
                              f"{get_usage(program_name)}\n")
     if sys.argv[0] == '-h':
         print(get_usage(program_name))
+        print("Supported flags:")
         for flag in flags:
-            print(f"{flag}:\t" + get_help(flag))
+            print(f"    {flag}: " + get_help(flag))
         exit(0)
     if len(sys.argv) < 2:
         print_compiler_error("Not enough parameters!",
@@ -1163,10 +1349,6 @@ def main():
         print_compiler_error("Third Parameter has to be an execution flag!",
                              get_usage(program_name))
 
-    instructions, memory, strings, labels = parse_instructions(code)
-    instructions = type_check_program(instructions)
-    instructions = evaluate_static_equations(instructions)
-
     if len(sys.argv) > 0:
         opt_args = sys.argv
         for opt in opt_args:
@@ -1176,8 +1358,13 @@ def main():
             else:
                 opt_flags[opt] = True
 
+    instructions, procedures, memory, strings, labels = parse_instructions(code)
+    if not opt_flags['-unsafe']:
+        instructions = type_check_program(instructions)
+    instructions = evaluate_static_equations(instructions)
+
     if run_flag == '-c':
-        compile_code(input_file, instructions, memory, strings, labels, opt_flags)
+        compile_code(input_file, instructions, procedures, memory, strings, labels, opt_flags)
     elif run_flag == '-d':
         for i, mem in enumerate(memory):
             print(f"{mem.name}: {mem.size} bytes")

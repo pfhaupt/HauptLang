@@ -1,18 +1,5 @@
-memory ahhhhhhhhhhh 8 end
-memory bla 8 end
-memory _tmp 129876 end
-memory fuck_you 8 end
-
-1 while dup 10 < do
-  dup puti
-  1 +
-end drop
-1
-if 1 1 == do
-  "Hello\n" puts
-  1 drop
-else
-  "World\n" puts
-  2 +
+proc sum int int -> int do
+  +
 end
-puti
+
+34 35 sum puti

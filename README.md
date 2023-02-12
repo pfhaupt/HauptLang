@@ -10,7 +10,7 @@ This project is inspired by [Porth](https://www.youtube.com/watch?v=8QP2fDBIxjM&
 ## Milestones/Roadmap
 - [x] Compiled into a [Windows Executable](https://en.wikipedia.org/wiki/Portable_Executable)
 - [x] Typed (Strings, Integers, Pointers)
-- [ ] Functions, Arrays
+- [ ] Functions
 - [ ] Self-hosting
 - [ ] Optimizations
 
@@ -18,11 +18,11 @@ This project is inspired by [Porth](https://www.youtube.com/watch?v=8QP2fDBIxjM&
 ### haupt.py
 This is the heart of the language.
 Usage:
-> haupt.py <input.hpt> [-s | -c | -d] [optional flags]
+> python haupt.py <input.hpt> [-c | -d] [optional flags]
 
 or
 
-> haupt.py -h
+> python haupt.py -h
 
 to show more options.
 
@@ -43,7 +43,7 @@ So make sure you have both of those tools available in your %PATH%.
 "Hello World!\n" puts
 ```
 ```console
-> haupt.py readme.hpt -c
+> python haupt.py readme.hpt -c
 [compilation logs]
 [generated readme.exe]
 ```
@@ -56,7 +56,7 @@ Hello World!
 
 ### Testing
 ```console
-> test.py
+> python test.py
 ```
 Runs all programs in the [./project-euler/](#project-euler) folder
 and reports the exit code for both compilation and execution.  

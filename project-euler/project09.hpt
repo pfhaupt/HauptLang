@@ -1,10 +1,8 @@
-mem
-    a 8
-    b 8
-    c 8
-    result 8
-    running 8
-end
+memory a 8 end
+memory b 8 end
+memory c 8 end
+memory result 8 end
+memory running 8 end
 
 0 a !64
 0 b !64

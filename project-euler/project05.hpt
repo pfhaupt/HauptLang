@@ -1,10 +1,8 @@
-mem
-    n 8
-    done 8
-    up_to 8
-    index 8
-    count 8
-end
+memory n 8 end
+memory done 8 end
+memory up_to 8 end
+memory index 8 end
+memory count 8 end
 
 1 n !64
 0 done !64

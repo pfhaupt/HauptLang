@@ -1,9 +1,7 @@
-mem
-    result 8
-    a 8
-    b 8
-    fib 8
-end
+memory result 8 end
+memory a 8 end
+memory b 8 end
+memory fib 8 end
 
 0 result !64
 1 a !64

@@ -1,8 +1,6 @@
-mem
-    result 8
-    limit 8
-    index 8
-end
+memory result 8 end
+memory limit 8 end
+memory index 8 end
 
 0 result !64
 1000 limit !64

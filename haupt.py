@@ -10,7 +10,6 @@ from colorama import Fore, Style
 
 colorama.init()
 
-
 COMMENT_CHAR = "#"
 PROC_IO_SEP = "->"
 
@@ -298,7 +297,7 @@ def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory]):
                              error_descr)
     elif variable_name in INTRINSIC_LOOKUP or variable_name in KEYWORD_LOOKUP:
         print_compiler_error("Invalid variable name",
-                             f"{ variable.loc}: Name is reserved.\n"
+                             f"{variable.loc}: Name is reserved.\n"
                              f"Found: {variable_name}")
     else:
         for mem in global_memory:
@@ -423,13 +422,15 @@ def parse_instructions(code: List[Token]):
                     print_compiler_error("Local memory is not supported yet",
                                          f"{location}: Unexpected word.")
                     assert current_proc in procedures, "This might be a bug in parsing"
-                    word = Operation(operation=OpSet.PUSH_LOCAL_MEM, operand=DataTuple(typ=Type.INT, value=len(procedures[current_proc].local_mem)))
+                    word = Operation(operation=OpSet.PUSH_LOCAL_MEM,
+                                     operand=DataTuple(typ=Type.INT, value=len(procedures[current_proc].local_mem)))
                     op = Instruction(loc=location, word=word)
 
                     procedures[current_proc].local_mem.append(memory_unit)
                     procedures[current_proc].mem_size += memory_unit.size
                 else:
-                    word = Operation(operation=OpSet.PUSH_GLOBAL_MEM, operand=DataTuple(typ=Type.INT, value=len(global_memory)))
+                    word = Operation(operation=OpSet.PUSH_GLOBAL_MEM,
+                                     operand=DataTuple(typ=Type.INT, value=len(global_memory)))
                     op = Instruction(loc=location, word=word)
                     global_memory.append(memory_unit)
 
@@ -439,11 +440,14 @@ def parse_instructions(code: List[Token]):
                                          f"{location}: You can't define procedures inside other procedures.")
                 ip, proc_name, proc_signature = parse_procedure_signature(code, ip)
                 if proc_name in procedures:
+                    procedure_start: int = procedures[proc_name].start
+                    procedure_token: Instruction = instructions[procedure_start]
                     print_compiler_error("Procedure redefinition",
-                                         f"{location}: Procedure is already defined here: {procedures[proc_name]}")
+                                         f"{location}: Procedure is already defined here: {procedure_token.loc}")
                 else:
                     proc_ip = len(instructions) + 1
-                    procedure: Procedure = Procedure(name=proc_name, signature=proc_signature, local_mem=[], mem_size=0, start=proc_ip, end=proc_ip)
+                    procedure: Procedure = Procedure(name=proc_name, signature=proc_signature, local_mem=[], mem_size=0,
+                                                     start=proc_ip, end=proc_ip)
                     procedures[proc_name] = procedure
                     inside_proc = True
                     current_proc = proc_name
@@ -514,16 +518,19 @@ def parse_instructions(code: List[Token]):
                 if pre_end_operation == OpSet.PREP_PROC:
                     assert current_proc in procedures, "This might be a bug in parsing"
                     procedures[current_proc].end = len(instructions)
-                    word = Operation(operation=OpSet.RET_PROC, operand=DataTuple(typ=Type.INT, value=procedures[current_proc].mem_size))
+                    word = Operation(operation=OpSet.RET_PROC,
+                                     operand=DataTuple(typ=Type.INT, value=procedures[current_proc].mem_size))
                     op = Instruction(loc=location, word=word)
                     inside_proc = False
                 elif pre_end_operation == Keyword.DO:
-                    instructions[pre_end_ip].word.operand = DataTuple(typ=Type.INT, value=len(instructions) - pre_end_ip)
+                    instructions[pre_end_ip].word.operand = DataTuple(typ=Type.INT,
+                                                                      value=len(instructions) - pre_end_ip)
                     if pre_do_operation == Keyword.IF:
                         word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.INT, value=1))
                         op = Instruction(loc=location, word=word)
                     elif pre_do_operation == Keyword.WHILE:
-                        word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.INT, value=pre_do_ip - len(instructions)))
+                        word = Operation(operation=KEYWORD_LOOKUP[name],
+                                         operand=DataTuple(typ=Type.INT, value=pre_do_ip - len(instructions)))
                         op = Instruction(loc=location, word=word)
                     else:
                         print_compiler_error("Unexpected keyword in parsing",
@@ -532,7 +539,8 @@ def parse_instructions(code: List[Token]):
                 elif pre_end_operation == Keyword.ELSE:
                     assert instructions[pre_do_ip].word.operation == Keyword.DO, "This is a bug in the parsing step"
 
-                    instructions[pre_end_ip].word.operand = DataTuple(typ=Type.INT, value=len(instructions) - pre_end_ip)
+                    instructions[pre_end_ip].word.operand = DataTuple(typ=Type.INT,
+                                                                      value=len(instructions) - pre_end_ip)
 
                     word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.INT, value=1))
                     op = Instruction(loc=location, word=word)
@@ -597,8 +605,8 @@ def parse_instructions(code: List[Token]):
 
 
 def type_check_program(instructions: List[Instruction]):
-    assert len(OpSet) == 24, "Not all Operations are handled in type checking"
-    assert len(Keyword) == 6, "Not all Keywords are handled in type checking"
+    assert len(OpSet) == 31, "Not all Operations are handled in type checking"
+    assert len(Keyword) == 7, "Not all Keywords are handled in type checking"
     assert len(Type) == 3, "Not all Type are handled in type checking"
     stack: List[Type] = []
     stack_checkpoint: List[tuple] = []
@@ -618,13 +626,13 @@ def type_check_program(instructions: List[Instruction]):
             elif operation == OpSet.DROP:
                 if len(stack) < 1:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}")
                 else:
                     stack.pop()
             elif operation == OpSet.OVER:
                 if len(stack) < 2:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{location}: {operation} expected 2 arguments, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 2 arguments, found {len(stack)} instead: {stack}")
                 else:
                     type2 = stack.pop()
                     type1 = stack.pop()
@@ -634,7 +642,7 @@ def type_check_program(instructions: List[Instruction]):
             elif operation == OpSet.DUP:
                 if len(stack) < 1:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}")
                 else:
                     type1 = stack.pop()
                     stack.append(type1)
@@ -642,7 +650,7 @@ def type_check_program(instructions: List[Instruction]):
             elif operation == OpSet.ROT:
                 if len(stack) < 3:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{location}: {operation} expected 3 arguments, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 3 arguments, found {len(stack)} instead: {stack}")
                 else:
                     # type3 type2 type1
                     type3 = stack.pop()
@@ -655,7 +663,7 @@ def type_check_program(instructions: List[Instruction]):
             elif operation == OpSet.SWAP:
                 if len(stack) < 2:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{location}: {operation} expected 2 arguments, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 2 arguments, found {len(stack)} instead: {stack}")
                 else:
                     # type2 type1
                     type2 = stack.pop()
@@ -663,10 +671,11 @@ def type_check_program(instructions: List[Instruction]):
                     stack.append(type2)
                     stack.append(type1)
                     # type2 type1
-            elif operation in [OpSet.ADD_INT, OpSet.SUB_INT, OpSet.MUL_INT, OpSet.DIV_INT, OpSet.MOD_INT] or operation in [OpSet.LT, OpSet.GT, OpSet.EQ, OpSet.NEQ]:
+            elif operation in [OpSet.ADD_INT, OpSet.SUB_INT, OpSet.MUL_INT, OpSet.DIV_INT,
+                               OpSet.MOD_INT] or operation in [OpSet.LT, OpSet.GT, OpSet.EQ, OpSet.NEQ]:
                 if len(stack) < 2:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{location}: {operation} expected 2 arguments, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 2 arguments, found {len(stack)} instead: {stack}")
                 else:
                     type2 = stack.pop()
                     type1 = stack.pop()
@@ -678,7 +687,7 @@ def type_check_program(instructions: List[Instruction]):
             elif operation in [OpSet.ADD_PTR, OpSet.SUB_PTR]:
                 if len(stack) < 2:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{location}: {operation} expected 2 arguments, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 2 arguments, found {len(stack)} instead: {stack}")
                 else:
                     type2 = stack.pop()
                     type1 = stack.pop()
@@ -691,7 +700,7 @@ def type_check_program(instructions: List[Instruction]):
                 # value variable !64
                 if len(stack) < 2:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{location}: {operation} expected 2 arguments, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 2 arguments, found {len(stack)} instead: {stack}")
                 else:
                     type2 = stack.pop()
                     type1 = stack.pop()
@@ -704,7 +713,7 @@ def type_check_program(instructions: List[Instruction]):
                 # variable ?64
                 if len(stack) < 1:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}")
                 else:
                     type1 = stack.pop()
                     if type1 == Type.PTR:
@@ -715,7 +724,7 @@ def type_check_program(instructions: List[Instruction]):
             elif operation == OpSet.PRINT_INT:
                 if len(stack) < 1:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}")
                 else:
                     type1 = stack.pop()
                     if type1 == Type.INT:
@@ -726,7 +735,7 @@ def type_check_program(instructions: List[Instruction]):
             elif operation == OpSet.PRINT_STR:
                 if len(stack) < 1:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}")
                 else:
                     type1 = stack.pop()
                     if type1 == Type.STR:
@@ -734,6 +743,8 @@ def type_check_program(instructions: List[Instruction]):
                     else:
                         print_compiler_error("Wrong types for operation",
                                              f"{location}: {operation} expected {[Type.INT]}, found {type1} instead.")
+            elif operation == OpSet.PUSH_GLOBAL_MEM:
+                pass
             else:
                 assert False, f"Not implemented type checking for {operation} yet"
         elif operation in Keyword:
@@ -750,7 +761,7 @@ def type_check_program(instructions: List[Instruction]):
                 if pre_do_keyword in [Keyword.WHILE, Keyword.IF]:
                     if len(stack) < 1:
                         print_compiler_error("Not enough operands for operation",
-                                             f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}\n")
+                                             f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}")
                     else:
                         type1 = stack.pop()
                         if type1 != Type.INT:
@@ -798,17 +809,17 @@ def type_check_program(instructions: List[Instruction]):
                     if not (len1 == len2 == len3):
                         print_compiler_error("Stack modification error in type checking",
                                              f"{if_block.loc}: All `{if_keyword.name}`-branches must result in the same stack.\n"
-                                             f"\tStack before IF: {if_stack}\n"
-                                             f"\tStack before ELSE: {block_stack}\n"
-                                             f"\tStack before END: {stack}")
+                                             f"\tStack before `if`: {if_stack}\n"
+                                             f"\tStack before `else`: {block_stack}\n"
+                                             f"\tStack before `end`: {stack}")
                     else:
                         for i in range(len1):
                             if not (stack[i] == block_stack[i] == if_stack[i]):
                                 print_compiler_error("Stack modification error in type checking",
                                                      f"{if_block.loc}: All `{if_keyword.name}`-branches must result in the same stack.\n"
-                                                     f"\tStack before IF: {if_stack}\n"
-                                                     f"\tStack before ELSE: {block_stack}\n"
-                                                     f"\tStack before END: {stack}")
+                                                     f"\tStack before `if`: {if_stack}\n"
+                                                     f"\tStack before `else`: {block_stack}\n"
+                                                     f"\tStack before `end`: {stack}")
 
                 else:
                     assert False, f"{block_keyword} not implemented yet in type-checking Keyword.END"
@@ -890,7 +901,9 @@ def evaluate_static_equations(instructions: List[Instruction]):
                         # print("Result: " + str(result))
                         last_instr = instr_stack[-1]
                         # print(f"Last instruction: {last_instr}")
-                        new_instr = Instruction(loc=last_instr.loc, word=Operation(operation=OpSet.PUSH_INT, operand=DataTuple(typ=Type.INT, value=result)))
+                        new_instr = Instruction(loc=last_instr.loc, word=Operation(operation=OpSet.PUSH_INT,
+                                                                                   operand=DataTuple(typ=Type.INT,
+                                                                                                     value=result)))
                         instr_stack = []
                         # print(f"Sequence breaker: {op}")
                         # print("*********************")
@@ -907,7 +920,8 @@ def evaluate_static_equations(instructions: List[Instruction]):
 # Create Obj file: nasm -f win64 output.asm -o output.obj
 # Link Obj together: golink /no /console /entry main output.obj MSVCRT.dll kernel32.dll
 # Call Program: output.exe
-def compile_code(program_name: str, instructions: List[Instruction], procedures: dict[str, Procedure], memory: List[Memory], strings: List[tuple], labels: List[DataTuple], opt_flags: dict):
+def compile_code(program_name: str, instructions: List[Instruction], procedures: dict[str, Procedure],
+                 memory: List[Memory], strings: List[tuple], labels: List[DataTuple], opt_flags: dict):
     assert len(OpSet) == 31, "Not all OP can be compiled yet"
     assert len(Keyword) == 7, "Not all Keywords can be compiled yet"
     silenced = opt_flags['-m']
@@ -925,7 +939,9 @@ def compile_code(program_name: str, instructions: List[Instruction], procedures:
                      "  extern printf\n")
         output.write("\n")
         output.write("main:\n")
-        output.write("  mov qword [ret_stack_rsp], ret_stack\n")
+        output.write("    mov rax, ret_stack_end\n")
+        output.write("    mov [ret_stack_rsp], rax\n")
+
         output.write("  push rbp\n"
                      "  mov rbp, rsp\n"
                      "  sub rsp, 32\n")
@@ -1154,8 +1170,9 @@ def compile_code(program_name: str, instructions: List[Instruction], procedures:
             output.write(f"  {label} db {hex_value}")
         output.write("\n")
         output.write("segment .bss\n")
-        output.write("  ret_stack resb 4096\n")
         output.write("  ret_stack_rsp resb 8\n")
+        output.write("  ret_stack resb 4096\n")
+        output.write("  ret_stack_end resb 8\n")
         for var in memory:
             output.write(f"  {var.name} resb {var.size}\n")
         output.write("\n")

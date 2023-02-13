@@ -2,6 +2,7 @@ memory reverse_buffer 32 end
 memory print_buffer 32 end
 
 proc int-to-str int -> ptr do
+  # number 0
   0 while over 0 > do
     # number index
     swap
@@ -24,6 +25,7 @@ proc int-to-str int -> ptr do
   end drop
   dup print_buffer swap ptr+ 13 swap !8
   dup 1 + print_buffer swap ptr+ 10 swap !8
+  dup 2 + print_buffer swap ptr+ 0 swap !8
   # reverse_buffer puts
   print_buffer
 end
@@ -36,3 +38,4 @@ proc fac int -> int do
 end
 
 1 fac int-to-str puts
+1234567 int-to-str puts

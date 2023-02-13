@@ -8,7 +8,7 @@ import time
 colorama.init()
 
 # python -m timeit -s "import subprocess" "subprocess.call([\"python\", \"test.py\"])"
-# runs the test script multiple times and reports the average time
+# runs the test script multiple times and reports the best run time
 # Take it with a grain of salt, it has some overhead (~10% from what I've seen)
 
 

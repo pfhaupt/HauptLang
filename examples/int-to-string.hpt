@@ -4,7 +4,6 @@ memory print_buffer 32 end
 proc int-to-str int -> ptr do
   # number 0
   0 while over 0 > do
-    # number index
     swap
     dup 10 % 48 + # here is the char
     rot dup reverse_buffer swap ptr+ rot swap !8
@@ -26,6 +25,7 @@ proc int-to-str int -> ptr do
   dup print_buffer swap ptr+ 13 swap !8
   dup 1 + print_buffer swap ptr+ 10 swap !8
   dup 2 + print_buffer swap ptr+ 0 swap !8
+  drop # drop len
   # reverse_buffer puts
   print_buffer
 end

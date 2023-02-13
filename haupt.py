@@ -52,6 +52,23 @@ class Signature:
     inputs: List[Type]
     outputs: List[Type]
 
+    def __str__(self):
+        result = ""
+        if len(self.inputs) == 0:
+            result = "None"
+        else:
+            for t in self.inputs:
+                result += t.name.lower() + ", "
+            result = result[:-2]
+        result += f" {PROC_IO_SEP} "
+        if len(self.outputs) == 0:
+            result = "None"
+        else:
+            for t in self.outputs:
+                result += t.name.lower() + ", "
+            result = result[:-2]
+        return f"{result}"
+
 
 class OpSet(Enum):
     NOP = auto()
@@ -185,11 +202,10 @@ class Procedure:
     local_mem: List[Memory]
     mem_size: int
     signature: Signature
+    type_checked: bool
 
-
-def get_instruction_location(instruction):
-    return (f"{instruction[0]}:"
-            f"{Fore.CYAN}{instruction[1]}:{instruction[2]}{Style.RESET_ALL}")
+    def __str__(self):
+        return f"Procedure {self.name}: {self.signature}"
 
 
 class ErrorType(Enum):
@@ -447,7 +463,7 @@ def parse_instructions(code: List[Token]):
                 else:
                     proc_ip = len(instructions) + 1
                     procedure: Procedure = Procedure(name=proc_name, signature=proc_signature, local_mem=[], mem_size=0,
-                                                     start=proc_ip, end=proc_ip)
+                                                     start=proc_ip, end=proc_ip, type_checked=False)
                     procedures[proc_name] = procedure
                     inside_proc = True
                     current_proc = proc_name
@@ -604,7 +620,7 @@ def parse_instructions(code: List[Token]):
     # return [parse_op(op) for op in code]
 
 
-def type_check_program(instructions: List[Instruction]):
+def type_check_program(instructions: List[Instruction], procedures: dict[str, Procedure]):
     assert len(OpSet) == 31, "Not all Operations are handled in type checking"
     assert len(Keyword) == 7, "Not all Keywords are handled in type checking"
     assert len(Type) == 3, "Not all Type are handled in type checking"
@@ -652,20 +668,20 @@ def type_check_program(instructions: List[Instruction]):
                     print_compiler_error("Not enough operands for operation",
                                          f"{location}: {operation} expected 3 arguments, found {len(stack)} instead: {stack}")
                 else:
-                    # type3 type2 type1
+                    # type1 type2 type3
                     type3 = stack.pop()
                     type2 = stack.pop()
                     type1 = stack.pop()
                     stack.append(type2)
-                    stack.append(type1)
                     stack.append(type3)
-                    # type2 type1 type3
+                    stack.append(type1)
+                    # type2 type3 type1
             elif operation == OpSet.SWAP:
                 if len(stack) < 2:
                     print_compiler_error("Not enough operands for operation",
                                          f"{location}: {operation} expected 2 arguments, found {len(stack)} instead: {stack}")
                 else:
-                    # type2 type1
+                    # type1 type2
                     type2 = stack.pop()
                     type1 = stack.pop()
                     stack.append(type2)
@@ -696,12 +712,13 @@ def type_check_program(instructions: List[Instruction]):
                     else:
                         print_compiler_error("Wrong types for operation",
                                              f"{location}: {operation} expected {[Type.PTR, Type.INT]}, found {type1} and {type2} instead.")
-            elif operation == OpSet.SET_INT:
+            elif operation in [OpSet.SET_INT, OpSet.SET_BYTE]:
                 # value variable !64
                 if len(stack) < 2:
                     print_compiler_error("Not enough operands for operation",
                                          f"{location}: {operation} expected 2 arguments, found {len(stack)} instead: {stack}")
                 else:
+                    # type1 type2
                     type2 = stack.pop()
                     type1 = stack.pop()
                     if type1 == Type.INT and type2 == Type.PTR:
@@ -709,7 +726,7 @@ def type_check_program(instructions: List[Instruction]):
                     else:
                         print_compiler_error("Wrong types for operation",
                                              f"{location}: {operation} expected {[Type.INT, Type.PTR]}, found {type1} and {type2} instead.")
-            elif operation == OpSet.GET_INT:
+            elif operation in [OpSet.GET_INT, OpSet.GET_BYTE]:
                 # variable ?64
                 if len(stack) < 1:
                     print_compiler_error("Not enough operands for operation",
@@ -738,11 +755,76 @@ def type_check_program(instructions: List[Instruction]):
                                          f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}")
                 else:
                     type1 = stack.pop()
-                    if type1 == Type.STR:
+                    if type1 == Type.STR or type1 == Type.PTR:
                         pass
                     else:
                         print_compiler_error("Wrong types for operation",
-                                             f"{location}: {operation} expected {[Type.INT]}, found {type1} instead.")
+                                             f"{location}: {operation} expected {[Type.STR]}, found {type1} instead.")
+            elif operation == OpSet.PREP_PROC:
+                pass
+                # assert False, f"{operation} type-checking not implemented yet"
+            elif operation == OpSet.RET_PROC:
+                pre_ret_tuple: tuple = stack_checkpoint.pop()
+                proc_instruction: Instruction = pre_ret_tuple[1]
+                proc_keyword: Keyword = proc_instruction.word.operation
+                assert proc_keyword == Keyword.PROC, "This might be a bug in parsing"
+                proc_name: str = proc_instruction.word.operand.value
+                assert proc_name in procedures, "This might be a bug in parsing"
+                procedure: Procedure = procedures[proc_name]
+                proc_signature: Signature = procedure.signature
+                proc_outputs: List[Type] = proc_signature.outputs
+                pre_proc_stack: List[Type] = pre_ret_tuple[2]
+                for out in proc_outputs:
+                    pre_proc_stack.append(out)
+                if len(pre_proc_stack) != len(stack):
+                    print(pre_proc_stack)
+                    print(stack)
+                    print_compiler_error("Signature mismatch",
+                                         f"{proc_instruction.loc}: Procedure does not match the provided signature.")
+                else:
+                    for i in range(len(stack)):
+                        if stack[i] != pre_proc_stack[i]:
+                            print_compiler_error("Signature mismatch",
+                                                 f"{proc_instruction.loc}: Procedure does not match the provided signature.")
+                    for _ in proc_outputs:
+                        pre_proc_stack.pop()
+                    stack = pre_proc_stack.copy()
+                # pass
+                # assert False, f"{operation} type-checking not implemented yet"
+            elif operation == OpSet.CALL_PROC:
+                proc_id: int = op.word.operand.value
+                assert proc_id < len(instructions), "This might be a bug in parsing"
+                proc_name: str = instructions[proc_id].word.operand.value
+                assert proc_name in procedures, "This might be a bug in parsing"
+                procedure: Procedure = procedures[proc_name]
+                assert procedure.type_checked, "This might be a bug in parsing"
+                expected_inputs: List[Type] = procedure.signature.inputs
+                expected_inputs_as_str: str = str(expected_inputs)
+                if len(stack) < len(expected_inputs):
+                    print_compiler_error("Not enough operands for operation",
+                                         f"{location}: `{proc_name}` expected {len(expected_inputs)} arguments, found {len(stack)} instead:\n"
+                                         f"Expected stack: {expected_inputs_as_str}\n"
+                                         f"Actual stack:   {stack}")
+                else:
+                    # at least arg_count types on stack
+                    # int ptr int -> int
+                    len1 = len(stack)
+                    len2 = len(expected_inputs)
+                    for i in range(len2):
+                        type_on_stack = stack[len1 - i - 1]
+                        expected_type = expected_inputs[len2 - i - 1]
+                        if type_on_stack != expected_type:
+                            print_compiler_error("Type mismatch in type checking",
+                                                 f"{location}: Attempted to call procedure {proc_name} with the wrong argument types:\n"
+                                                 f"Expected stack: {expected_inputs_as_str}\n"
+                                                 f"Actual stack:   {stack}")
+                    for _ in range(len2):
+                        stack.pop()
+                    proc_outputs: List[Type] = procedure.signature.outputs
+                    for out in proc_outputs:
+                        stack.append(out)
+                # pass
+                # assert False, f"{operation} type-checking not implemented yet"
             elif operation == OpSet.PUSH_GLOBAL_MEM:
                 pass
             else:
@@ -775,7 +857,7 @@ def type_check_program(instructions: List[Instruction]):
                 block_instr: Instruction = block[1]
                 block_keyword: Operation = block_instr.word.operation
                 block_stack = block[2]
-                assert block_keyword == Keyword.IF, "This should never fail"
+                assert block_keyword == Keyword.IF, "This might be a bug in parsing"
                 stack_checkpoint.append((ip, op, stack.copy(), block_instr, block_stack.copy()))
                 stack = block_stack.copy()
             elif operation == Keyword.END:
@@ -784,10 +866,10 @@ def type_check_program(instructions: List[Instruction]):
                 block_instr: Instruction = block[1]
                 block_keyword: Operation = block_instr.word.operation
                 block_stack = block[2]
-                if block_keyword == Keyword.WHILE or block_keyword == Keyword.IF:
+                if block_keyword == Keyword.WHILE:
                     if len(stack) < len(block_stack):
                         print_compiler_error("Stack modification error in type checking",
-                                             f"{get_instruction_location(block_instr)}: `{block_keyword.name}` is not allowed to decrease the size of the stack.")
+                                             f"{block_instr.loc}: `{block_keyword.name}` is not allowed to decrease the size of the stack.")
                     else:
                         pre_stack_len = len(block_stack)
                         post_stack_len = len(stack)
@@ -795,39 +877,41 @@ def type_check_program(instructions: List[Instruction]):
                         for i in range(stack_len):
                             if stack[i] != block_stack[i]:
                                 print_compiler_error("Stack modification error in type checking",
-                                                     f"{get_instruction_location(block_instr)}: `{block_keyword.name}` is not allowed to modify the types on the stack.\n"
+                                                     f"{block_instr.loc}: `{block_keyword.name}` is not allowed to modify the types on the stack.\n"
                                                      f"Before: {block_stack}\n"
                                                      f"After: {stack}")
-                elif block_keyword == Keyword.ELSE:
-                    if_block: Instruction = block[3]
-                    if_keyword: Operation = if_block.word.operation
-                    assert if_keyword == Keyword.IF, "This should never fail"
-                    if_stack = block[4]
-                    len1 = len(if_stack)
-                    len2 = len(block_stack)
-                    len3 = len(stack)
-                    if not (len1 == len2 == len3):
+                elif block_keyword == Keyword.IF or block_keyword == Keyword.ELSE:
+                    len1 = len(block_stack)
+                    len2 = len(stack)
+                    if not (len1 == len2):
                         print_compiler_error("Stack modification error in type checking",
-                                             f"{if_block.loc}: All `{if_keyword.name}`-branches must result in the same stack.\n"
-                                             f"\tStack before `if`: {if_stack}\n"
-                                             f"\tStack before `else`: {block_stack}\n"
+                                             f"{block_instr.loc}: All `if`-branches must result in the same stack.\n"
+                                             f"\tStack before `if` : {block_stack}\n"
                                              f"\tStack before `end`: {stack}")
                     else:
                         for i in range(len1):
-                            if not (stack[i] == block_stack[i] == if_stack[i]):
+                            if not (stack[i] == block_stack[i]):
                                 print_compiler_error("Stack modification error in type checking",
-                                                     f"{if_block.loc}: All `{if_keyword.name}`-branches must result in the same stack.\n"
-                                                     f"\tStack before `if`: {if_stack}\n"
-                                                     f"\tStack before `else`: {block_stack}\n"
+                                                     f"{block_instr.loc}: All `if`-branches must result in the same stack.\n"
+                                                     f"\tStack before `if` : {block_stack}\n"
                                                      f"\tStack before `end`: {stack}")
-
                 else:
                     assert False, f"{block_keyword} not implemented yet in type-checking Keyword.END"
+            elif operation == Keyword.PROC:
+                proc_name: str = op.word.operand.value
+                assert proc_name in procedures, "This might be a bug in parsing"
+                stack_checkpoint.append((ip, op, stack.copy()))
+                procedure: Procedure = procedures[proc_name]
+                proc_inputs: List[Type] = procedure.signature.inputs
+                for t in proc_inputs:
+                    stack.append(t)
+                procedure.type_checked = True
             else:
-                print(stack_checkpoint)
+                # print(stack_checkpoint)
                 assert False, f"{operation} type-checking not implemented yet"
         else:
             assert False, "Unreachable - This might be a bug in parsing"
+        # print(operation, stack)
 
     if len(stack) > 0:
         print_compiler_error("Unhandled Data on Stack",
@@ -1171,7 +1255,7 @@ def compile_code(program_name: str, instructions: List[Instruction], procedures:
         output.write("\n")
         output.write("segment .bss\n")
         output.write("  ret_stack_rsp resb 8\n")
-        output.write("  ret_stack resb 4096\n")
+        output.write("  ret_stack resb 4194304\n")
         output.write("  ret_stack_end resb 8\n")
         for var in memory:
             output.write(f"  {var.name} resb {var.size}\n")
@@ -1377,7 +1461,7 @@ def main():
 
     instructions, procedures, memory, strings, labels = parse_instructions(code)
     if not opt_flags['-unsafe']:
-        instructions = type_check_program(instructions)
+        instructions = type_check_program(instructions, procedures)
     instructions = evaluate_static_equations(instructions)
 
     if run_flag == '-c':

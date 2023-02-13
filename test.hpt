@@ -1,5 +1,11 @@
-proc sum int int -> int do
-  +
+
+proc decrement int -> int do
+  if dup 0 > do
+    dup puti
+    1 - decrement
+  else
+    0 drop
+  end
 end
 
-34 35 sum puti
+10 decrement puti

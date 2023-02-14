@@ -11,3 +11,15 @@ while n ?64 up_to ?64 < do
   result ?64 puti
   n ?64 1 + n !64
 end
+
+proc fac int -> int do
+  # Calculates n!
+  1 while over 1 > do
+    over *
+    swap 1 -
+    swap
+  end
+  swap drop
+end
+
+10 fac puti

@@ -10,7 +10,7 @@ This project is inspired by [Porth](https://www.youtube.com/watch?v=8QP2fDBIxjM&
 ## Milestones/Roadmap
 - [x] Compiled into a [Windows Executable](https://en.wikipedia.org/wiki/Portable_Executable)
 - [x] Typed (Strings, Integers, Pointers)
-- [ ] Functions
+- [x] Functions
 - [ ] Self-hosting
 - [ ] Optimizations
 

@@ -12,6 +12,7 @@ colorama.init()
 
 COMMENT_CHAR = "#"
 PROC_IO_SEP = "->"
+PARSE_COUNT = -1
 
 
 class Type(Enum):
@@ -143,6 +144,7 @@ class Keyword(Enum):
     WHILE = auto()
     MEMORY = auto()
     PROC = auto()
+    INCLUDE = auto()
 
 
 KEYWORD_LOOKUP: dict[str, Keyword] = {
@@ -153,6 +155,7 @@ KEYWORD_LOOKUP: dict[str, Keyword] = {
     "while": Keyword.WHILE,
     "memory": Keyword.MEMORY,
     "proc": Keyword.PROC,
+    "include": Keyword.INCLUDE,
 }
 assert len(Keyword) == len(KEYWORD_LOOKUP), "Not all Keywords are in the lookup table yet!"
 
@@ -191,7 +194,7 @@ class Memory:
     size: int
 
     def __str__(self):
-        return f"{self.loc}: {self.name} has a size of {self.size} bytes."
+        return f"{self.name}: {self.size} bytes"
 
 
 @dataclass
@@ -206,6 +209,51 @@ class Procedure:
 
     def __str__(self):
         return f"Procedure {self.name}: {self.signature}"
+
+
+@dataclass
+class Program:
+    name: str
+    instructions: List[Instruction]
+    procedures: dict[str, Procedure]
+    memory: List[Memory]
+    strings: List[tuple]
+    labels: List[DataTuple]
+    included_files: List[Token]
+
+    def __str__(self):
+        result = f"Program name:\n  {self.name}\n"
+        result += "*" * 25 + "\n"
+        result += "Global Memory:\n"
+        for mem in self.memory:
+            result += "  " + str(mem) + "\n"
+        result += "*" * 25 + "\n"
+        result += "Included Files:\n"
+        for included_file in self.included_files:
+            result += "  " + str(included_file) + "\n"
+        result += "*" * 25 + "\n"
+        result += "Procedures:\n"
+        for proc in self.procedures:
+            result += "  " + str(self.procedures[proc]) + "\n"
+        result += "*" * 25 + "\n"
+        result += "Instructions:\n"
+        for instr in self.instructions:
+            result += "  " + str(instr.word) + "\n"
+        result += "Strings: \n"
+        for s in self.strings:
+            result += "  " + str(s) + "\n"
+        result += "*" * 25 + "\n"
+        result += "Jump labels: \n"
+        for lbl in self.labels:
+            result += "  " + str(lbl) + "\n"
+        return result
+
+    def __len__(self):
+        result = 0
+        for attr in self.__dict__:
+            if not attr.startswith("_"):
+                result += 1
+        return result
 
 
 class ErrorType(Enum):
@@ -239,7 +287,7 @@ def check_string(s):
     if len(s) == 0 or (not s[0].isalpha() and s[0] != "_"):
         return False
     for char in s[1:]:
-        if not char.isalnum() and char not in ['_', '-']:
+        if not char.isalnum() and char != '_':
             return False
     return True
 
@@ -261,9 +309,12 @@ def get_token_in_line(line: str):
         char = line[index]
         if char == "\"":
             if not inside_str:
-                assert len(buffer) == 0, f"Buffer is expected to be empty, found {buffer} instead"
+                if len(buffer) > 0:
+                    parsed_token.append(buffer)
+                    buffer = ""
+                else:
+                    buffer += char
                 inside_str = True
-                buffer += char
             else:
                 inside_str = False
                 buffer += char
@@ -279,6 +330,9 @@ def get_token_in_line(line: str):
             else:
                 buffer += char
         index += 1
+    if inside_str:
+        print_compiler_error("Unmatched quotes",
+                             "There's a missing quote somewhere in the source code.")
     if len(buffer) > 0:
         parsed_token.append(buffer)
     for col, token in enumerate(parsed_token):
@@ -307,7 +361,7 @@ def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory]):
             error_descr = f"{variable.loc}: The name is only allowed to start with a letter or underscore\n" \
                           f"Found: {variable_name}"
         else:
-            error_descr = f"{variable.loc}: The name can only consist of letters, numbers and [-, _]\n" \
+            error_descr = f"{variable.loc}: The name can only consist of letters, numbers and `_`\n" \
                           f"Found: {variable_name}"
         print_compiler_error("Invalid name inside memory",
                              error_descr)
@@ -409,13 +463,18 @@ def parse_procedure_signature(code: List[Token], ip: int):
     return ip, proc_name, proc_signature
 
 
-def parse_instructions(code: List[Token]):
+def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_included_files: List[Token]):
+    if not opt_flags["-m"]:
+        print("[INFO] Parsing " + program_name)
+    global PARSE_COUNT
+    PARSE_COUNT += 1
     global_memory: List[Memory] = []
     procedures: dict[str, Procedure] = {}
     strings: List[tuple] = []
     instructions: List[Instruction] = []
     keyword_stack: List[tuple] = []
     jump_labels: List[DataTuple] = []
+    included_files: List[Token] = pre_included_files
 
     inside_proc: bool = False
     current_proc: str = ""
@@ -449,7 +508,6 @@ def parse_instructions(code: List[Token]):
                                      operand=DataTuple(typ=Type.INT, value=len(global_memory)))
                     op = Instruction(loc=location, word=word)
                     global_memory.append(memory_unit)
-
             elif name == "proc":
                 if inside_proc:
                     print_compiler_error("Unexpected word",
@@ -562,7 +620,75 @@ def parse_instructions(code: List[Token]):
                     op = Instruction(loc=location, word=word)
                 else:
                     assert False, "Unreachable - This is a bug in the parsing step. END will always come after DO or ELSE"
+            elif name == "include":
+                if not (ip + 1 < len(code)):
+                    print_compiler_error("Unexpected EOF",
+                                         f"{location}: Expected a name for `include` keyword, found end of file.")
+                ip += 1
+                include_token: Token = code[ip]
+                include_name: str = include_token.name
+                if not (include_name.startswith("\"") and include_name.endswith("\"")):
+                    print_compiler_error("Unexpected token in parsing",
+                                         f"{location}: The file name is expected to be surrounded with quotes.\n"
+                                         f"Found: {include_name}")
+                include_name: str = include_name[1:-1]
+                include_file_path: str = os.path.join(os.getcwd(), include_name)
+                file_exists: bool = os.path.exists(include_file_path)
+                if not file_exists:
+                    print_compiler_error("File does not exist",
+                                         f"{include_token.loc}: `include` could not find file `{include_name}`.")
+                else:
+                    if not include_name.endswith(".hpt"):
+                        print_compiler_error("Unexpected file ending",
+                                             f"{location}: Attempted to include non-Haupt program `{include_name}`.")
+                    if include_name == program_name:
+                        print_compiler_error("Attempted to include original program",
+                                             f"{include_token.loc}: You can't include the original program into itself.")
+                    for included in included_files:
+                        if include_name == included.name:
+                            print_compiler_error("File inclusion error",
+                                                 f"{location}: Already imported file `{include_name}` here: {included.loc}")
+                    included_files.append(Token(loc=include_token.loc, name=include_name))
+                    include_program: Program = parse_source_code(include_name, opt_flags, program_name, included_files)
+                    include_program.name = include_name
+                    # print(include_program)
+                    # Append all instructions
+                    instructions.extend(include_program.instructions)
+                    # Append all procedures
+                    for proc in include_program.procedures:
+                        if proc in procedures:
+                            other_loc = include_program.instructions[include_program.procedures[proc].start].loc
+                            def_loc = instructions[procedures[proc].start].loc
+                            print_compiler_error("Procedure redefinition in `include`",
+                                                 f"{location}: `include` failed. Reason: \n"
+                                                 f"{other_loc}: {proc} is already defined here: {def_loc}")
+                        else:
+                            procedures[proc] = include_program.procedures[proc]
+                    # Append the memory
+                    for mem in include_program.memory:
+                        for g_mem in global_memory:
+                            if mem.name == g_mem.name:
+                                other_loc = mem.loc
+                                def_loc = g_mem.loc
+                                print_compiler_error("Procedure redefinition in `include`",
+                                                     f"{location}: `include` failed. Reason: \n"
+                                                     f"{other_loc}: {mem.name} is already defined here: {def_loc}")
 
+                        global_memory.append(mem)
+                    # Append the labels
+                    jump_labels.extend(include_program.labels)
+                    # Append the strings
+                    for include_string in include_program.strings:
+                        for existing_string in strings:
+                            assert include_string[0] != existing_string[0], "This might be a bug caused by wrong PARSE_COUNT"
+                        strings.append(include_string)
+                    # len - 1 because we don't care about the name
+                    assert len(include_program) - 1 == 6, "Not all Program attributes are included in `include` parsing yet"
+                # word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.STR, value="None"))
+                # op = Instruction(loc=location, word=word)
+                # assert False
+                ip += 1
+                continue
             else:
                 print_compiler_error("Parsing of keyword token not implemented!",
                                      f"{token} can't be parsed yet.")
@@ -572,7 +698,7 @@ def parse_instructions(code: List[Token]):
             op = Instruction(loc=location, word=word)
         elif name.startswith("\"") and name.endswith("\""):
             # print(f"Found string {name}")
-            lbl: str = "str" + str(len(strings))
+            lbl: str = "str_" + str(PARSE_COUNT) + "_" + str(len(strings))
             strings.append((lbl, name[1:-1]))
             word = Operation(operation=OpSet.PUSH_STR, operand=DataTuple(typ=Type.STR, value=lbl))
             op = Instruction(loc=location, word=word)
@@ -616,13 +742,13 @@ def parse_instructions(code: List[Token]):
     # for i, lbl in enumerate(jump_labels):
     #     print(i, lbl)
     # exit(1)
-    return instructions, procedures, global_memory, strings, jump_labels
+    return Program(name=program_name, instructions=instructions, procedures=procedures, memory=global_memory, strings=strings, labels=jump_labels, included_files=included_files)
     # return [parse_op(op) for op in code]
 
 
 def type_check_program(instructions: List[Instruction], procedures: dict[str, Procedure]):
     assert len(OpSet) == 31, "Not all Operations are handled in type checking"
-    assert len(Keyword) == 7, "Not all Keywords are handled in type checking"
+    assert len(Keyword) == 8, "Not all Keywords are handled in type checking"
     assert len(Type) == 3, "Not all Type are handled in type checking"
     stack: List[Type] = []
     stack_checkpoint: List[tuple] = []
@@ -919,7 +1045,6 @@ def type_check_program(instructions: List[Instruction], procedures: dict[str, Pr
                              f"{stack}\n"
                              "Please make sure that the stack is empty after program is finished executing.",
                              ErrorType.STACK)
-    return instructions
 
 
 def evaluate_static_equations(instructions: List[Instruction]):
@@ -1004,10 +1129,15 @@ def evaluate_static_equations(instructions: List[Instruction]):
 # Create Obj file: nasm -f win64 output.asm -o output.obj
 # Link Obj together: golink /no /console /entry main output.obj MSVCRT.dll kernel32.dll
 # Call Program: output.exe
-def compile_code(program_name: str, instructions: List[Instruction], procedures: dict[str, Procedure],
-                 memory: List[Memory], strings: List[tuple], labels: List[DataTuple], opt_flags: dict):
+def compile_program(program: Program, opt_flags: dict):
     assert len(OpSet) == 31, "Not all OP can be compiled yet"
-    assert len(Keyword) == 7, "Not all Keywords can be compiled yet"
+    assert len(Keyword) == 8, "Not all Keywords can be compiled yet"
+    program_name: str = program.name
+    instructions: List[Instruction] = program.instructions
+    procedures: dict[str, Procedure] = program.procedures
+    memory: List[Memory] = program.memory
+    strings: List[tuple] = program.strings
+    labels: List[DataTuple] = program.labels
     silenced = opt_flags['-m']
     optimized = opt_flags['-o']
     keep_asm = opt_flags['-a']
@@ -1415,7 +1545,6 @@ def get_usage(program_name):
 
 
 def main():
-    # TODO: Add Strings, Arrays, Functions
     flags = ['-h', '-c', '-d', '-o', '-m', '-a', '-unsafe']
     exec_flags = flags[1:3]
     optional_flags = flags[3:]
@@ -1435,14 +1564,10 @@ def main():
         print_compiler_error("Not enough parameters!",
                              f"{get_usage(program_name)}\n")
     input_file, sys.argv = shift(sys.argv)
+    if not input_file.startswith("./"):
+        input_file = "./" + input_file
     if not input_file.endswith(".hpt"):
         print_compiler_error(f"File {input_file} does not end with `.hpt`!",
-                             get_usage(program_name))
-    code = ""
-    try:
-        code = load_from_file(input_file)
-    except FileNotFoundError:
-        print_compiler_error(f"File `{input_file} does not exist!",
                              get_usage(program_name))
 
     run_flag, sys.argv = shift(sys.argv)
@@ -1459,13 +1584,10 @@ def main():
             else:
                 opt_flags[opt] = True
 
-    instructions, procedures, memory, strings, labels = parse_instructions(code)
-    if not opt_flags['-unsafe']:
-        instructions = type_check_program(instructions, procedures)
-    instructions = evaluate_static_equations(instructions)
+    main_program: Program = parse_source_code(input_file, opt_flags, program_name)
 
     if run_flag == '-c':
-        compile_code(input_file, instructions, procedures, memory, strings, labels, opt_flags)
+        compile_program(main_program, opt_flags)
     elif run_flag == '-d':
         for i, mem in enumerate(memory):
             print(f"{mem.name}: {mem.size} bytes")
@@ -1477,6 +1599,23 @@ def main():
         print(f"Unknown flag `{run_flag}`")
         print(get_usage(program_name))
         exit(1)
+
+
+def parse_source_code(input_file, opt_flags, program_name, included_files=None):
+    if included_files is None:
+        included_files = []
+    code: List[Token] = []
+    try:
+        code = load_from_file(input_file)
+    except FileNotFoundError:
+        print_compiler_error(f"File `{input_file} does not exist!",
+                             get_usage(program_name))
+    main_program: Program = parse_instructions(code, opt_flags, input_file, included_files)
+    if not opt_flags['-unsafe']:
+        type_check_program(instructions=main_program.instructions, procedures=main_program.procedures)
+    main_program.instructions = evaluate_static_equations(instructions=main_program.instructions)
+
+    return main_program
 
 
 if __name__ == '__main__':

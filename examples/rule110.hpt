@@ -1,0 +1,73 @@
+memory len 8 end
+memory buffer 32 end
+memory next_buffer 32 end
+
+32 len !64
+
+1 len ?64 1 - buffer swap ptr+ !8
+
+proc display-buffer do
+  0 while dup len ?64 < do
+    dup buffer swap ptr+ ?8
+    if dup 1 == do
+      "*" puts
+    else
+      " " puts
+    end drop
+    1 +
+  end drop
+  "\n" puts
+end
+
+proc calculate-step do
+  1 while dup len ?64 1 - < do
+    dup 1 - buffer swap ptr+ ?8  4 *
+    over buffer swap ptr+ ?8     2 * +
+    over 1 + buffer swap ptr+ ?8 1 * +
+    if dup 0 == do
+      swap dup next_buffer swap ptr+ 0 swap !8
+    else
+      if dup 1 == do
+        swap dup next_buffer swap ptr+ 1 swap !8
+      else
+        if dup 2 == do
+          swap dup next_buffer swap ptr+ 1 swap !8
+        else
+          if dup 3 == do
+            swap dup next_buffer swap ptr+ 1 swap !8
+          else
+            if dup 4 == do
+              swap dup next_buffer swap ptr+ 0 swap !8
+            else
+              if dup 5 == do
+                swap dup next_buffer swap ptr+ 1 swap !8
+              else
+                if dup 6 == do
+                  swap dup next_buffer swap ptr+ 1 swap !8
+                else
+                  if dup 7 == do
+                    swap dup next_buffer swap ptr+ 0 swap !8
+                  end
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+    swap drop
+    1 +
+  end drop
+
+  # copy next_buffer into buffer
+  0 while dup len ?64 < do
+    dup dup next_buffer swap ptr+ ?8 buffer rot ptr+ !8
+    1 +
+  end drop
+end
+
+0 while dup len ?64 < do
+  calculate-step
+  display-buffer
+  1 +
+end drop

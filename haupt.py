@@ -1141,6 +1141,7 @@ def compile_program(program: Program, opt_flags: dict):
     silenced = opt_flags['-m']
     optimized = opt_flags['-o']
     keep_asm = opt_flags['-a']
+    run_program = opt_flags['-r']
     name = program_name.replace(".hpt", "")
     label_name = "instr"
     with open(name + ".tmp", "w") as output:
@@ -1511,6 +1512,8 @@ def compile_program(program: Program, opt_flags: dict):
     if not silenced:
         print(f"[INFO] Removed {name}.obj")
         print(f"[CMD] Created {name}.exe")
+    if run_program:
+        call_cmd([f"{name}.exe"], silenced)
     # call_cmd([f"{name}.exe"])
 
 
@@ -1532,6 +1535,8 @@ def get_help(flag):
             return "Mutes compilation command line output."
         case '-a':
             return "Keeps generated Assembly file after compilation."
+        case '-r':
+            return "Runs the program after compilation."
         case '-unsafe':
             return "Disables type checking."
         case _:
@@ -1545,7 +1550,7 @@ def get_usage(program_name):
 
 
 def main():
-    flags = ['-h', '-c', '-d', '-o', '-m', '-a', '-unsafe']
+    flags = ['-h', '-c', '-d', '-o', '-m', '-a', '-r', '-unsafe']
     exec_flags = flags[1:3]
     optional_flags = flags[3:]
     opt_flags = dict(zip(optional_flags, [False] * len(optional_flags)))

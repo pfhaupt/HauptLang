@@ -1,2 +1,13 @@
 include "./examples/int-to-string.hpt"
+
+proc fac int -> int do
+  # Calculates n!
+  1 while over 1 > do
+    over *
+    swap 1 -
+    swap
+  end
+  swap drop
+end
+
 10 fac int-to-str puts

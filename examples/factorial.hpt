@@ -1,8 +1,6 @@
-mem
-  n 8
-  result 8
-  up_to 8
-end
+memory n 8 end
+memory result 8 end
+memory up_to 8 end
 
 1 n !64
 1 result !64

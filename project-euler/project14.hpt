@@ -1,10 +1,9 @@
-mem
-    n 8
-    max 8
-    best 8
-    index 8
-    chain 8
-end
+memory n 8 end
+memory max 8 end
+memory best 8 end
+memory index 8 end
+memory chain 8 end
+
 1 n !64
 0 max !64
 0 best !64

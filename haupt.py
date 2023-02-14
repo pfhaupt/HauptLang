@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import List
+from typing import List, Union, Optional
 import subprocess
 import sys
 import os
@@ -10,17 +10,64 @@ from colorama import Fore, Style
 
 colorama.init()
 
+COMMENT_CHAR = "#"
+PROC_IO_SEP = "->"
 
-class Types(Enum):
+
+class Type(Enum):
     INT = auto()
     PTR = auto()
     STR = auto()
 
 
+assert len(Type) == 3, "Not all Types are in the lookup table yet!"
+TYPES_LOOKUP: dict[str, Type] = {
+    "int": Type.INT,
+    "str": Type.STR,
+    "ptr": Type.PTR,
+}
+
+
+@dataclass
+class Location:
+    file: str
+    row: int
+    col: int
+
+    def __str__(self):
+        return f"{self.file}:{self.row}:{self.col}"
+
+
+@dataclass
+class Token:
+    loc: Location
+    name: str
+
+    def __str__(self):
+        return f"{self.loc}: `{self.name}`"
+
+
 @dataclass
 class Signature:
-    inputs: List[Types]
-    outputs: List[Types]
+    inputs: List[Type]
+    outputs: List[Type]
+
+    def __str__(self):
+        result = ""
+        if len(self.inputs) == 0:
+            result = "None"
+        else:
+            for t in self.inputs:
+                result += t.name.lower() + ", "
+            result = result[:-2]
+        result += f" {PROC_IO_SEP} "
+        if len(self.outputs) == 0:
+            result = "None"
+        else:
+            for t in self.outputs:
+                result += t.name.lower() + ", "
+            result = result[:-2]
+        return f"{result}"
 
 
 class OpSet(Enum):
@@ -48,37 +95,132 @@ class OpSet(Enum):
     NEQ = auto()
     SET_INT = auto()
     GET_INT = auto()
+    SET_BYTE = auto()
+    GET_BYTE = auto()
+    CALL_PROC = auto()
+    PREP_PROC = auto()
+    RET_PROC = auto()
+    PUSH_GLOBAL_MEM = auto()
+    PUSH_LOCAL_MEM = auto()
 
 
-class Keywords(Enum):
+assert len(OpSet) == 31, "Not all Operations are in the lookup table yet!"
+INTRINSIC_LOOKUP: dict[str, OpSet] = {
+    "nop": OpSet.NOP,
+    "dup": OpSet.DUP,
+    "drop": OpSet.DROP,
+    "rot": OpSet.ROT,
+    "swap": OpSet.SWAP,
+    "over": OpSet.OVER,
+    "+": OpSet.ADD_INT,
+    "-": OpSet.SUB_INT,
+    "*": OpSet.MUL_INT,
+    "/": OpSet.DIV_INT,
+    "%": OpSet.MOD_INT,
+    "ptr+": OpSet.ADD_PTR,
+    "ptr-": OpSet.SUB_PTR,
+    # "": OpSet.PUSH_INT,
+    # "": OpSet.PUSH_STR,
+    # "": OpSet.PUSH_PTR,
+    "puti": OpSet.PRINT_INT,
+    "puts": OpSet.PRINT_STR,
+    "<": OpSet.LT,
+    ">": OpSet.GT,
+    "==": OpSet.EQ,
+    "!=": OpSet.NEQ,
+    "!64": OpSet.SET_INT,
+    "?64": OpSet.GET_INT,
+    "!8": OpSet.SET_BYTE,
+    "?8": OpSet.GET_BYTE,
+}
+
+
+class Keyword(Enum):
     IF = auto()
     ELSE = auto()
     DO = auto()
     END = auto()
     WHILE = auto()
+    MEMORY = auto()
+    PROC = auto()
 
 
-COMMENT_CHAR = "#"
+KEYWORD_LOOKUP: dict[str, Keyword] = {
+    "if": Keyword.IF,
+    "else": Keyword.ELSE,
+    "do": Keyword.DO,
+    "end": Keyword.END,
+    "while": Keyword.WHILE,
+    "memory": Keyword.MEMORY,
+    "proc": Keyword.PROC,
+}
+assert len(Keyword) == len(KEYWORD_LOOKUP), "Not all Keywords are in the lookup table yet!"
 
 
-def get_instruction_location(instruction):
-    return (f"{instruction[0]}:"
-            f"{Fore.CYAN}{instruction[1]}:{instruction[2]}{Style.RESET_ALL}")
+@dataclass
+class DataTuple:
+    typ: Type
+    value: Union[int, str]
+
+    def __str__(self):
+        return f"{self.typ} {self.value}"
 
 
-class ErrorTypes(Enum):
+@dataclass
+class Operation:
+    operation: Union[Keyword, OpSet]
+    operand: Optional[DataTuple]
+
+    def __str__(self):
+        return f"{self.operation} {self.operand}" if self.operand else f"{self.operation}"
+
+
+@dataclass
+class Instruction:
+    loc: Location
+    word: Operation
+
+    def __str__(self):
+        return f"{self.loc}: {self.word}"
+
+
+@dataclass
+class Memory:
+    loc: Location
+    name: str
+    size: int
+
+    def __str__(self):
+        return f"{self.loc}: {self.name} has a size of {self.size} bytes."
+
+
+@dataclass
+class Procedure:
+    name: str
+    start: int
+    end: int
+    local_mem: List[Memory]
+    mem_size: int
+    signature: Signature
+    type_checked: bool
+
+    def __str__(self):
+        return f"Procedure {self.name}: {self.signature}"
+
+
+class ErrorType(Enum):
     NORMAL = auto()
     STACK = auto()
 
 
-def print_compiler_error(err, info="", error_type=ErrorTypes.NORMAL):
+def print_compiler_error(err, info="", error_type=ErrorType.NORMAL):
     match error_type:
-        case ErrorTypes.NORMAL:
+        case ErrorType.NORMAL:
             if len(info) == 0:
                 print(f"{Fore.LIGHTRED_EX}Error: {err}{Style.RESET_ALL}")
             else:
                 print(f"{Fore.LIGHTRED_EX}Error: {err}{Style.RESET_ALL}\n{info}")
-        case ErrorTypes.STACK:
+        case ErrorType.STACK:
             if len(info) == 0:
                 print(f"{Fore.LIGHTRED_EX}StackError: {err}{Style.RESET_ALL}")
             else:
@@ -91,6 +233,15 @@ def call_cmd(cmd: List, silenced=False):
     if not silenced:
         print("[CMD] " + " ".join(cmd))
     subprocess.call(cmd)
+
+
+def check_string(s):
+    if len(s) == 0 or (not s[0].isalpha() and s[0] != "_"):
+        return False
+    for char in s[1:]:
+        if not char.isalnum() and char not in ['_', '-']:
+            return False
+    return True
 
 
 def get_lines(lines: List):
@@ -110,7 +261,7 @@ def get_token_in_line(line: str):
         char = line[index]
         if char == "\"":
             if not inside_str:
-                assert len(buffer) == 0
+                assert len(buffer) == 0, f"Buffer is expected to be empty, found {buffer} instead"
                 inside_str = True
                 buffer += char
             else:
@@ -128,7 +279,8 @@ def get_token_in_line(line: str):
             else:
                 buffer += char
         index += 1
-    parsed_token.append(buffer)
+    if len(buffer) > 0:
+        parsed_token.append(buffer)
     for col, token in enumerate(parsed_token):
         result.append((col, token))
     return result
@@ -136,389 +288,588 @@ def get_token_in_line(line: str):
 
 def load_from_file(file_path: str):
     with open(file_path, "r") as f:
-        return [(file_path, row + 1, col + 1, token)
+        return [Token(loc=Location(file=file_path, row=row + 1, col=col + 1), name=token)
                 for (row, line) in get_lines(f.readlines())
                 for (col, token) in get_token_in_line(line.split(COMMENT_CHAR)[0])]
 
 
-def parse_op(op: str, memory: List):
-    other_info = op
-    op = op[3]
-    assert len(OpSet) == 24, "Not all OP can be parsed yet"
-    if (op.startswith("-") and op[1:].isdigit()) or op.isdigit():
-        op = OpSet.PUSH_INT, (Types.INT, int(op))
-    elif op.startswith("\"") and op.endswith("\""):
-        op = OpSet.PUSH_STR, (Types.STR, op[1:-1])
-    elif op == "rot":
-        op = OpSet.ROT,
-    elif op == "dup":
-        op = OpSet.DUP,
-    elif op == "swap":
-        op = OpSet.SWAP,
-    elif op == "over":
-        op = OpSet.OVER,
-    elif op == "drop":
-        op = OpSet.DROP,
-    elif op == "+":
-        op = OpSet.ADD_INT,
-    elif op == "-":
-        op = OpSet.SUB_INT,
-    elif op == "ptr+":
-        op = OpSet.ADD_PTR,
-    elif op == "ptr-":
-        op = OpSet.SUB_PTR,
-    elif op == "*":
-        op = OpSet.MUL_INT,
-    elif op == "/":
-        op = OpSet.DIV_INT,
-    elif op == '%':
-        op = OpSet.MOD_INT,
-    elif op == "puti":
-        op = OpSet.PRINT_INT,
-    elif op == "puts":
-        op = OpSet.PRINT_STR,
-    elif op == "==":
-        op = OpSet.EQ,
-    elif op == "!=":
-        op = OpSet.NEQ,
-    elif op == '>':
-        op = OpSet.GT,
-    elif op == '<':
-        op = OpSet.LT,
-    elif op == "!64":
-        op = OpSet.SET_INT,
-    elif op == "?64":
-        op = OpSet.GET_INT,
-    elif op == "mem":
-        print_compiler_error("Unexpected `mem` found",
-                             f"{get_instruction_location(other_info)}"
-                             f" => `{op}`\n"
-                             f"Memory block needs to be declared at the very top of the program.")
-    else:
-        if op == 'if':
-            op = Keywords.IF,
-        elif op == "do":
-            op = Keywords.DO,
-        elif op == "end":
-            op = Keywords.END,
-        elif op == "else":
-            op = Keywords.ELSE,
-        elif op == "while":
-            op = Keywords.WHILE,
+def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory]):
+    # Syntax: memory variable byte_count end
+    if len(code) - ip < 4:
+        # we need 4 words for each block
+        # ip points at number 1
+        print_compiler_error("Not enough words for memory block")
+    ip += 1
+    variable: Token = code[ip]
+    variable_name: str = variable.name
+    if not check_string(variable_name):
+        if not variable_name[0].isalpha():
+            error_descr = f"{variable.loc}: The name is only allowed to start with a letter or underscore\n" \
+                          f"Found: {variable_name}"
         else:
-            variable = False
-            for mem in memory:
-                if op == mem[3]:
-                    variable = True
-                    break
-            if variable:
-                pass
-                op = OpSet.PUSH_PTR, (Types.PTR, op)
+            error_descr = f"{variable.loc}: The name can only consist of letters, numbers and [-, _]\n" \
+                          f"Found: {variable_name}"
+        print_compiler_error("Invalid name inside memory",
+                             error_descr)
+    elif variable_name in INTRINSIC_LOOKUP or variable_name in KEYWORD_LOOKUP:
+        print_compiler_error("Invalid variable name",
+                             f"{variable.loc}: Name is reserved.\n"
+                             f"Found: {variable_name}")
+    else:
+        for mem in global_memory:
+            if variable_name == mem.name:
+                print_compiler_error("Redefinition of memory block.",
+                                     f"{variable.loc}: {variable_name} is already defined here:\n"
+                                     f"  {mem.loc} with a size of {mem.size} bytes.")
+                print("Oh no")
+                exit(1)
+        pass
+        # print("valid name")
+    ip += 1
+    byte_count: Token = code[ip]
+    byte_string: str = byte_count.name
+    size = -1
+    if byte_string.isdigit():
+        size: int = int(byte_string)
+        if size == 0:
+            print_compiler_error("Invalid size inside memory",
+                                 f"{byte_count.loc}: Memory size is expected to be greater than 0.\n"
+                                 f"Found: {byte_string}")
+        else:
+            pass
+            # print("valid size")
+    elif byte_string.startswith("-") and byte_string[1:].isdigit():
+        print_compiler_error("Invalid size inside memory",
+                             f"{byte_count.loc}: Memory size is expected to be greater than 0.\n"
+                             f"Found: {byte_string}")
+    else:
+        print_compiler_error("Invalid size inside memory",
+                             f"{byte_count.loc}: Memory size is expected to be a number.\n"
+                             f"Found: {byte_string}")
+    ip += 1
+    end_token: Token = code[ip]
+    end_name: str = end_token.name
+    if not end_name == "end":
+        print_compiler_error("Unexpected word in parsing",
+                             f"{end_token.loc} Expected `end`, found `{end_name}` instead.")
+    else:
+        pass
+        # print("valid end")
+
+    return ip, Memory(loc=variable.loc, name=variable_name, size=size)
+
+
+def parse_procedure_signature(code: List[Token], ip: int):
+    if len(code) - ip < 4:
+        # we need *at minimum* 4 words for a valid procedure: proc name do end
+        # ip points at number 1
+        print_compiler_error("Not enough words for procedure signature")
+    ip += 1
+    proc_name_token: Token = code[ip]
+    proc_name = proc_name_token.name
+    # print(proc_name_token)
+    ip += 1
+    next_token: Token = code[ip]
+    inputs: List[Type] = []
+    outputs: List[Type] = []
+    found_sep = False
+    sep_loc: Location = None
+
+    types = "[" + ", ".join(TYPES_LOOKUP) + "]"
+    while next_token.name != "do":
+        if not found_sep:
+            # haven't found PROC_IO_SEP yet, we are parsing inputs
+            if next_token.name == PROC_IO_SEP:
+                found_sep = True
+                sep_loc = next_token.loc
+            elif next_token.name in TYPES_LOOKUP:
+                inputs.append(TYPES_LOOKUP[next_token.name])
             else:
-                print_compiler_error(f"Unknown token in parse_op(op)!",
-                                     f"{get_instruction_location(other_info)}"
-                                     f" => `{op}`")
-    return other_info[0], other_info[1], other_info[2], op
+                print_compiler_error("Invalid word found",
+                                     f"{next_token.loc}: Found {next_token.name}, expected one of {types}")
+        else:
+            if next_token.name == PROC_IO_SEP:
+                print_compiler_error("Unexpected word",
+                                     f"{next_token.loc}: Expected only one separator in procedure signature, found two.\n"
+                                     f"Separator already found here: {sep_loc}")
+            elif next_token.name in TYPES_LOOKUP:
+                outputs.append(TYPES_LOOKUP[next_token.name])
+            else:
+                print_compiler_error("Invalid word found",
+                                     f"{next_token.loc}: Found {next_token.name}, expected one of {types}")
+
+        ip += 1
+        if ip >= len(code):
+            print_compiler_error("Missing `do` for procedure",
+                                 f"{proc_name_token.loc}: Missing `do` for procedure `{proc_name_token.name}`")
+        next_token: Token = code[ip]
+
+    proc_signature: Signature = Signature(inputs=inputs, outputs=outputs)
+    ip -= 1
+    return ip, proc_name, proc_signature
 
 
-def parse_instructions(code: List):
-    memory_found = False
-    for op in code:
-        if memory_found and op[3] == "mem":
-            print_compiler_error("Multiple memory blocks found",
-                                 "Right now only one memory block is supported\n")
-        elif op[3] == "mem":
-            memory_found = True
+def parse_instructions(code: List[Token]):
+    global_memory: List[Memory] = []
+    procedures: dict[str, Procedure] = {}
+    strings: List[tuple] = []
+    instructions: List[Instruction] = []
+    keyword_stack: List[tuple] = []
+    jump_labels: List[DataTuple] = []
 
-    memory = []
-    if memory_found:
-        memory_index = 0
-        op = code[memory_index][3]
-        if op == "mem":
-            while code[memory_index][3] != "end":
-                if memory_index == len(code) - 1:
-                    print_compiler_error("Matching `end` not found!",
-                                         f"{get_instruction_location(code[memory_index])}: "
-                                         "`mem` block does not have matching `end`.")
-                memory.append(code[memory_index])
-                memory_index += 1
-            memory.append(code[memory_index])
+    inside_proc: bool = False
+    current_proc: str = ""
 
-    new_code = []
-    for op in code:
-        if op not in memory:
-            new_code.append(op)
-    instructions = [parse_op(op, memory) for op in new_code]
+    ip = 0
+    while ip < len(code):
+        token: Token = code[ip]
+        location: Location = token.loc
+        name: str = token.name
+        op: Instruction = None
+        if name in INTRINSIC_LOOKUP:
+            # print(f"Found intrinsic {name}")
+            word = Operation(operation=INTRINSIC_LOOKUP[name], operand=None)
+            op = Instruction(loc=location, word=word)
+        elif name in KEYWORD_LOOKUP:
+            # print(f"Found keyword {name}")
+            if name == "memory":
+                ip, memory_unit = parse_memory_block(code, ip, global_memory)
+                if inside_proc:
+                    print_compiler_error("Local memory is not supported yet",
+                                         f"{location}: Unexpected word.")
+                    assert current_proc in procedures, "This might be a bug in parsing"
+                    word = Operation(operation=OpSet.PUSH_LOCAL_MEM,
+                                     operand=DataTuple(typ=Type.INT, value=len(procedures[current_proc].local_mem)))
+                    op = Instruction(loc=location, word=word)
 
-    strings = []
-    index = 0
-    string_counter = 0
-    while index < len(instructions):
-        op = instructions[index]
-        operation = op[3]
-        if operation[0] == OpSet.PUSH_STR:
-            typed_operand = operation[1]
-            string = typed_operand[1]
-            label = f"str_{string_counter}"
-            file_name = op[0]
-            row = op[1]
-            col = op[2]
-            oper = op[3]
-            instructions[index] = (file_name, row, col, (oper[0], (Types.STR, label)))
-            strings.append((label, string))
-            string_counter += 1
-        index += 1
-    return instructions, memory, strings
+                    procedures[current_proc].local_mem.append(memory_unit)
+                    procedures[current_proc].mem_size += memory_unit.size
+                else:
+                    word = Operation(operation=OpSet.PUSH_GLOBAL_MEM,
+                                     operand=DataTuple(typ=Type.INT, value=len(global_memory)))
+                    op = Instruction(loc=location, word=word)
+                    global_memory.append(memory_unit)
+
+            elif name == "proc":
+                if inside_proc:
+                    print_compiler_error("Unexpected word",
+                                         f"{location}: You can't define procedures inside other procedures.")
+                ip, proc_name, proc_signature = parse_procedure_signature(code, ip)
+                if proc_name in procedures:
+                    procedure_start: int = procedures[proc_name].start
+                    procedure_token: Instruction = instructions[procedure_start]
+                    print_compiler_error("Procedure redefinition",
+                                         f"{location}: Procedure is already defined here: {procedure_token.loc}")
+                else:
+                    proc_ip = len(instructions) + 1
+                    procedure: Procedure = Procedure(name=proc_name, signature=proc_signature, local_mem=[], mem_size=0,
+                                                     start=proc_ip, end=proc_ip, type_checked=False)
+                    procedures[proc_name] = procedure
+                    inside_proc = True
+                    current_proc = proc_name
+                keyword_stack.append((len(instructions), token))
+
+                word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.STR, value=proc_name))
+                op = Instruction(loc=location, word=word)
+            elif name == "while" or name == "if":
+                keyword_stack.append((len(instructions), token))
+
+                word = Operation(operation=KEYWORD_LOOKUP[name], operand=None)
+                op = Instruction(loc=location, word=word)
+            elif name == "do":
+                if len(keyword_stack) < 1:
+                    print_compiler_error("Lonely DO found.",
+                                         f"{location}: Could not find matching if, while or proc before this `do`.")
+                pre_do: tuple = keyword_stack.pop()
+                pre_do_ip: int = pre_do[0]
+                pre_do_keyword: Token = pre_do[1]
+                if pre_do_keyword.name == "while" or pre_do_keyword.name == "if":
+                    word = Operation(operation=KEYWORD_LOOKUP[name], operand=None)
+                    keyword_stack.append(((len(instructions), token), pre_do))
+                elif pre_do_keyword.name == "proc":
+                    word = Operation(operation=OpSet.PREP_PROC, operand=DataTuple(typ=Type.STR, value=current_proc))
+                    keyword_stack.append(((len(instructions), token), pre_do))
+                else:
+                    word = None
+                    print_compiler_error("Unexpected keyword in parsing",
+                                         f"{pre_do_keyword.loc}: Expected to be while, if or proc.\n"
+                                         f"Found: {pre_do_keyword.name}")
+
+                op = Instruction(loc=location, word=word)
+            elif name == "else":
+                if len(keyword_stack) < 1:
+                    print_compiler_error("Lonely ELSE found.",
+                                         f"{location}: Could not find matching `do` before this `else`.")
+                pre_else: tuple = keyword_stack.pop()
+                pre_else_tuple: tuple = pre_else[0]
+                pre_else_ip: int = pre_else_tuple[0]
+                pre_do_tuple: tuple = pre_else[1]
+                pre_do_ip: int = pre_do_tuple[0]
+                pre_do_token: Token = pre_do_tuple[1]
+                if pre_do_token.name != "if":
+                    print_compiler_error("Unexpected keyword in parsing",
+                                         f"{instructions[pre_do_ip].loc}: Expected to be if.\n"
+                                         f"Found: {instructions[pre_do_ip].word}")
+                instructions[pre_else_ip].word.operand = DataTuple(typ=Type.INT, value=len(instructions) - pre_else_ip)
+                word = Operation(operation=KEYWORD_LOOKUP[name], operand=None)
+                op = Instruction(loc=location, word=word)
+                keyword_stack.append(((len(instructions), token), pre_else_tuple))
+            elif name == "end":
+                if len(keyword_stack) < 1:
+                    print_compiler_error("Lonely END found.",
+                                         f"{location}: Could not find matching `do` before this `end`.")
+                pre_end: tuple = keyword_stack.pop()
+                pre_end_tuple: tuple = pre_end[0]
+                pre_end_ip: int = pre_end_tuple[0]
+                pre_end_token: Token = pre_end_tuple[1]
+                # pre_end_keyword: Token = pre_end[1]
+                pre_end_operation: Keyword = instructions[pre_end_ip].word.operation
+                pre_do_tuple: tuple = pre_end[1]
+                pre_do_ip: int = pre_do_tuple[0]
+                pre_do_token: Token = pre_do_tuple[1]
+                # pre_do_keyword: Token = pre_do[1]
+                pre_do_operation: Keyword = instructions[pre_do_ip].word.operation
+
+                assert pre_end_operation == OpSet.PREP_PROC or pre_end_operation == Keyword.DO or pre_end_operation == Keyword.ELSE, "This might be a bug in the parsing step"
+                if pre_end_operation == OpSet.PREP_PROC:
+                    assert current_proc in procedures, "This might be a bug in parsing"
+                    procedures[current_proc].end = len(instructions)
+                    word = Operation(operation=OpSet.RET_PROC,
+                                     operand=DataTuple(typ=Type.INT, value=procedures[current_proc].mem_size))
+                    op = Instruction(loc=location, word=word)
+                    inside_proc = False
+                elif pre_end_operation == Keyword.DO:
+                    instructions[pre_end_ip].word.operand = DataTuple(typ=Type.INT,
+                                                                      value=len(instructions) - pre_end_ip)
+                    if pre_do_operation == Keyword.IF:
+                        word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.INT, value=1))
+                        op = Instruction(loc=location, word=word)
+                    elif pre_do_operation == Keyword.WHILE:
+                        word = Operation(operation=KEYWORD_LOOKUP[name],
+                                         operand=DataTuple(typ=Type.INT, value=pre_do_ip - len(instructions)))
+                        op = Instruction(loc=location, word=word)
+                    else:
+                        print_compiler_error("Unexpected keyword in parsing",
+                                             f"{instructions[pre_do_ip].loc}: Expected to be while or if.\n"
+                                             f"Found: {instructions[pre_do_ip].word}")
+                elif pre_end_operation == Keyword.ELSE:
+                    assert instructions[pre_do_ip].word.operation == Keyword.DO, "This is a bug in the parsing step"
+
+                    instructions[pre_end_ip].word.operand = DataTuple(typ=Type.INT,
+                                                                      value=len(instructions) - pre_end_ip)
+
+                    word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.INT, value=1))
+                    op = Instruction(loc=location, word=word)
+                else:
+                    assert False, "Unreachable - This is a bug in the parsing step. END will always come after DO or ELSE"
+
+            else:
+                print_compiler_error("Parsing of keyword token not implemented!",
+                                     f"{token} can't be parsed yet.")
+        elif (name.startswith("-") and name[1:].isdigit()) or name.isdigit():
+            # print(f"Found integer {name}")
+            word = Operation(operation=OpSet.PUSH_INT, operand=DataTuple(typ=Type.INT, value=int(name)))
+            op = Instruction(loc=location, word=word)
+        elif name.startswith("\"") and name.endswith("\""):
+            # print(f"Found string {name}")
+            lbl: str = "str" + str(len(strings))
+            strings.append((lbl, name[1:-1]))
+            word = Operation(operation=OpSet.PUSH_STR, operand=DataTuple(typ=Type.STR, value=lbl))
+            op = Instruction(loc=location, word=word)
+        else:
+            is_mem = False
+            for mem in global_memory:
+                if name == mem.name:
+                    word = Operation(operation=OpSet.PUSH_PTR, operand=DataTuple(typ=Type.PTR, value=name))
+                    op = Instruction(loc=location, word=word)
+                    is_mem = True
+                    break
+
+            is_proc = False
+            if name in procedures:
+                jmp_ip = procedures[name].start
+                word = Operation(operation=OpSet.CALL_PROC, operand=DataTuple(typ=Type.INT, value=jmp_ip))
+                op = Instruction(loc=location, word=word)
+                is_proc = True
+
+            if not is_mem and not is_proc:
+                print_compiler_error("Unknown Token in Parsing",
+                                     f"{token} can't be parsed.")
+        instructions.append(op)
+        ip += 1
+
+    for i, op in enumerate(instructions):
+        # print(i, op)
+        operation: Operation = op.word.operation
+        operand: DataTuple = op.word.operand
+        if operation in [Keyword.ELSE, Keyword.DO]:
+            jump_labels.append(DataTuple(typ=Type.INT, value=operand.value + i + 1))
+        elif operation == Keyword.END:
+            if operand.value != 1:
+                jump_labels.append(DataTuple(typ=Type.INT, value=operand.value + i + 1))
+
+    for proc in procedures:
+        # print(proc)
+        jump_labels.append(DataTuple(typ=Type.INT, value=procedures[proc].start))
+        jump_labels.append(DataTuple(typ=Type.INT, value=procedures[proc].end + 1))
+    #
+    # for i, lbl in enumerate(jump_labels):
+    #     print(i, lbl)
+    # exit(1)
+    return instructions, procedures, global_memory, strings, jump_labels
     # return [parse_op(op) for op in code]
 
 
-def cross_reference(instructions):
-    index = 0
-    stack = []
-    assert len(Keywords) == 5, "Not all keywords can be cross-referenced yet"
-    while index < len(instructions):
-        op = instructions[index][3]
-        if op[0] == Keywords.WHILE:
-            stack.append((Keywords.WHILE, index))
-        elif op[0] == Keywords.IF:
-            stack.append((Keywords.IF, index))
-        if op[0] == Keywords.DO:
-            instr = stack.pop()
-            assert instr[0] == Keywords.IF or instr[0] == Keywords.WHILE, "DO only supports IF-ELSE for now!"
-            stack.append((Keywords.DO, instr, index))
-        elif op[0] == Keywords.ELSE:
-            instr = stack.pop()
-            if instr[1][0] != Keywords.IF:
-                print_compiler_error("Attempted to link `else` with non-if!",
-                                     f"{get_instruction_location(instructions[index])}"
-                                     f" => `{instr[1][0].name.lower()}` does not support `else`.")
-            instructions[instr[2]] = (
-                instructions[index][0], instructions[index][1], instructions[index][2],
-                (instr[0], instr[1], index - instr[2]))
-            stack.append((Keywords.ELSE, instr, index))
-        elif op[0] == Keywords.END:
-            instr = stack.pop()
-            if instr[0] == Keywords.DO:
-                instructions[instr[2]] = (
-                    instructions[index][0], instructions[index][1], instructions[index][2],
-                    (instr[0], instr[1], index - instr[2]))
-                if instr[1][0] == Keywords.IF:
-                    if len(instructions[index][3]) != 1:
-                        print_compiler_error("Expected END block to only have one element",
-                                             f"Found: {op}")
-                    instructions[index] = (
-                        instructions[index][0], instructions[index][1], instructions[index][2],
-                        (op[0], 1))
-                elif instr[1][0] == Keywords.WHILE:
-                    instructions[index] = (
-                        instructions[index][0], instructions[index][1], instructions[index][2],
-                        (op[0], instructions[instr[2]][3][1][1] - index))
-            elif instr[0] == Keywords.ELSE:
-                instructions[instr[2]] = (
-                    instructions[index][0], instructions[index][1], instructions[index][2],
-                    (instr[0], index - instr[2]))
-                instructions[index] = (
-                    instructions[index][0], instructions[index][1], instructions[index][2],
-                    (op[0], 1))
-            else:
-                assert False, "END only supports IF, ELSE and WHILE for now!"
-        index += 1
+def type_check_program(instructions: List[Instruction], procedures: dict[str, Procedure]):
+    assert len(OpSet) == 31, "Not all Operations are handled in type checking"
+    assert len(Keyword) == 7, "Not all Keywords are handled in type checking"
+    assert len(Type) == 3, "Not all Type are handled in type checking"
+    stack: List[Type] = []
+    stack_checkpoint: List[tuple] = []
+    keyword_stack: List[tuple] = []
 
-    if len(stack) != 0:
-        op_info = instructions[stack[-1][2]]
-        print_compiler_error("Missing END",
-                             f"{get_instruction_location(op_info)}"
-                             f" => `{op_info[3][0].name.lower()}` has no matching end.")
-
-    # contains all indexes which will be jumped to
-    jmp_instr = []
-    for i, op in enumerate(instructions):
-        i = i + 1
-        instr = op[3]
-        if instr[0] == Keywords.ELSE:
-            jmp_instr.append(instr[1] + i)
-        elif instr[0] == Keywords.DO:
-            jmp_instr.append(instr[2] + i)
-        elif instr[0] == Keywords.END:
-            if instr[1] != 1:
-                jmp_instr.append(instr[1] + i)
-
-    return instructions, jmp_instr
-
-
-def type_check_program(instructions):
-    assert len(OpSet) == 24, "Not all Operations are handled in type checking"
-    assert len(Keywords) == 5, "Not all Keywords are handled in type checking"
-    assert len(Types) == 3, "Not all Types are handled in type checking"
-    stack = []
-    keyword_stack = []
-    for ip, instr in enumerate(instructions):
-        op = instr[3]
-        operator = op[0]
-        if operator in OpSet:
-            if operator == OpSet.PUSH_INT:
-                stack.append(Types.INT)
-            elif operator == OpSet.PUSH_PTR:
-                stack.append(Types.PTR)
-            elif operator == OpSet.PUSH_STR:
-                stack.append(Types.STR)
-            elif operator == OpSet.DROP:
+    for ip, op in enumerate(instructions):
+        location: Location = op.loc
+        word: Operation = op.word
+        operation: Union[Keyword, OpSet] = word.operation
+        if operation in OpSet:
+            if operation == OpSet.PUSH_INT:
+                stack.append(Type.INT)
+            elif operation == OpSet.PUSH_PTR:
+                stack.append(Type.PTR)
+            elif operation == OpSet.PUSH_STR:
+                stack.append(Type.STR)
+            elif operation == OpSet.DROP:
                 if len(stack) < 1:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{get_instruction_location(instr)}: {operator} expected 1 argument, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}")
                 else:
                     stack.pop()
-            elif operator == OpSet.OVER:
+            elif operation == OpSet.OVER:
                 if len(stack) < 2:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{get_instruction_location(instr)}: {operator} expected 2 arguments, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 2 arguments, found {len(stack)} instead: {stack}")
                 else:
                     type2 = stack.pop()
                     type1 = stack.pop()
                     stack.append(type1)
                     stack.append(type2)
                     stack.append(type1)
-            elif operator == OpSet.DUP:
+            elif operation == OpSet.DUP:
                 if len(stack) < 1:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{get_instruction_location(instr)}: {operator} expected 1 argument, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}")
                 else:
                     type1 = stack.pop()
                     stack.append(type1)
                     stack.append(type1)
-            elif operator == OpSet.ROT:
+            elif operation == OpSet.ROT:
                 if len(stack) < 3:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{get_instruction_location(instr)}: {operator} expected 3 arguments, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 3 arguments, found {len(stack)} instead: {stack}")
                 else:
-                    # type3 type2 type1
+                    # type1 type2 type3
                     type3 = stack.pop()
                     type2 = stack.pop()
                     type1 = stack.pop()
                     stack.append(type2)
-                    stack.append(type1)
                     stack.append(type3)
-                    # type2 type1 type3
-            elif operator == OpSet.SWAP:
+                    stack.append(type1)
+                    # type2 type3 type1
+            elif operation == OpSet.SWAP:
                 if len(stack) < 2:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{get_instruction_location(instr)}: {operator} expected 2 arguments, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 2 arguments, found {len(stack)} instead: {stack}")
                 else:
-                    # type2 type1
+                    # type1 type2
                     type2 = stack.pop()
                     type1 = stack.pop()
                     stack.append(type2)
                     stack.append(type1)
                     # type2 type1
-            elif operator in [OpSet.ADD_INT, OpSet.SUB_INT, OpSet.MUL_INT, OpSet.DIV_INT, OpSet.MOD_INT] or operator in [OpSet.LT, OpSet.GT, OpSet.EQ, OpSet.NEQ]:
+            elif operation in [OpSet.ADD_INT, OpSet.SUB_INT, OpSet.MUL_INT, OpSet.DIV_INT,
+                               OpSet.MOD_INT] or operation in [OpSet.LT, OpSet.GT, OpSet.EQ, OpSet.NEQ]:
                 if len(stack) < 2:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{get_instruction_location(instr)}: {operator} expected 2 arguments, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 2 arguments, found {len(stack)} instead: {stack}")
                 else:
                     type2 = stack.pop()
                     type1 = stack.pop()
-                    if type1 == Types.INT and type2 == Types.INT:
-                        stack.append(Types.INT)
+                    if type1 == Type.INT and type2 == Type.INT:
+                        stack.append(Type.INT)
                     else:
                         print_compiler_error("Wrong types for operation",
-                                             f"{get_instruction_location(instr)}: {operator} expected 2 Integers, found {type1} and {type2} instead.")
-            elif operator in [OpSet.ADD_PTR, OpSet.SUB_PTR]:
+                                             f"{location}: {operation} expected 2 Integers, found {type1} and {type2} instead.")
+            elif operation in [OpSet.ADD_PTR, OpSet.SUB_PTR]:
                 if len(stack) < 2:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{get_instruction_location(instr)}: {operator} expected 2 arguments, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 2 arguments, found {len(stack)} instead: {stack}")
                 else:
                     type2 = stack.pop()
                     type1 = stack.pop()
-                    if type1 == Types.PTR and type2 == Types.INT:
-                        stack.append(Types.PTR)
+                    if type1 == Type.PTR and type2 == Type.INT:
+                        stack.append(Type.PTR)
                     else:
                         print_compiler_error("Wrong types for operation",
-                                             f"{get_instruction_location(instr)}: {operator} expected {[Types.PTR, Types.INT]}, found {type1} and {type2} instead.")
-            elif operator == OpSet.SET_INT:
+                                             f"{location}: {operation} expected {[Type.PTR, Type.INT]}, found {type1} and {type2} instead.")
+            elif operation in [OpSet.SET_INT, OpSet.SET_BYTE]:
                 # value variable !64
                 if len(stack) < 2:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{get_instruction_location(instr)}: {operator} expected 2 arguments, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 2 arguments, found {len(stack)} instead: {stack}")
                 else:
+                    # type1 type2
                     type2 = stack.pop()
                     type1 = stack.pop()
-                    if type1 == Types.INT and type2 == Types.PTR:
+                    if type1 == Type.INT and type2 == Type.PTR:
                         pass
                     else:
                         print_compiler_error("Wrong types for operation",
-                                             f"{get_instruction_location(instr)}: {operator} expected {[Types.INT, Types.PTR]}, found {type1} and {type2} instead.")
-            elif operator == OpSet.GET_INT:
+                                             f"{location}: {operation} expected {[Type.INT, Type.PTR]}, found {type1} and {type2} instead.")
+            elif operation in [OpSet.GET_INT, OpSet.GET_BYTE]:
                 # variable ?64
                 if len(stack) < 1:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{get_instruction_location(instr)}: {operator} expected 1 argument, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}")
                 else:
                     type1 = stack.pop()
-                    if type1 == Types.PTR:
-                        stack.append(Types.INT)
+                    if type1 == Type.PTR:
+                        stack.append(Type.INT)
                     else:
                         print_compiler_error("Wrong types for operation",
-                                             f"{get_instruction_location(instr)}: {operator} expected {[Types.PTR]}, found {type1} instead.")
-            elif operator == OpSet.PRINT_INT:
+                                             f"{location}: {operation} expected {[Type.PTR]}, found {type1} instead.")
+            elif operation == OpSet.PRINT_INT:
                 if len(stack) < 1:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{get_instruction_location(instr)}: {operator} expected 1 argument, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}")
                 else:
                     type1 = stack.pop()
-                    if type1 == Types.INT:
+                    if type1 == Type.INT:
                         pass
                     else:
                         print_compiler_error("Wrong types for operation",
-                                             f"{get_instruction_location(instr)}: {operator} expected {[Types.INT]}, found {type1} instead.")
-            elif operator == OpSet.PRINT_STR:
+                                             f"{location}: {operation} expected {[Type.INT]}, found {type1} instead.")
+            elif operation == OpSet.PRINT_STR:
                 if len(stack) < 1:
                     print_compiler_error("Not enough operands for operation",
-                                         f"{get_instruction_location(instr)}: {operator} expected 1 argument, found {len(stack)} instead: {stack}\n")
+                                         f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}")
                 else:
                     type1 = stack.pop()
-                    if type1 == Types.STR:
+                    if type1 == Type.STR or type1 == Type.PTR:
                         pass
                     else:
                         print_compiler_error("Wrong types for operation",
-                                             f"{get_instruction_location(instr)}: {operator} expected {[Types.INT]}, found {type1} instead.")
-
+                                             f"{location}: {operation} expected {[Type.STR]}, found {type1} instead.")
+            elif operation == OpSet.PREP_PROC:
+                pass
+                # assert False, f"{operation} type-checking not implemented yet"
+            elif operation == OpSet.RET_PROC:
+                pre_ret_tuple: tuple = stack_checkpoint.pop()
+                proc_instruction: Instruction = pre_ret_tuple[1]
+                proc_keyword: Keyword = proc_instruction.word.operation
+                assert proc_keyword == Keyword.PROC, "This might be a bug in parsing"
+                proc_name: str = proc_instruction.word.operand.value
+                assert proc_name in procedures, "This might be a bug in parsing"
+                procedure: Procedure = procedures[proc_name]
+                proc_signature: Signature = procedure.signature
+                proc_outputs: List[Type] = proc_signature.outputs
+                pre_proc_stack: List[Type] = pre_ret_tuple[2]
+                for out in proc_outputs:
+                    pre_proc_stack.append(out)
+                if len(pre_proc_stack) != len(stack):
+                    print(pre_proc_stack)
+                    print(stack)
+                    print_compiler_error("Signature mismatch",
+                                         f"{proc_instruction.loc}: Procedure does not match the provided signature.")
+                else:
+                    for i in range(len(stack)):
+                        if stack[i] != pre_proc_stack[i]:
+                            print_compiler_error("Signature mismatch",
+                                                 f"{proc_instruction.loc}: Procedure does not match the provided signature.")
+                    for _ in proc_outputs:
+                        pre_proc_stack.pop()
+                    stack = pre_proc_stack.copy()
+                # pass
+                # assert False, f"{operation} type-checking not implemented yet"
+            elif operation == OpSet.CALL_PROC:
+                proc_id: int = op.word.operand.value
+                assert proc_id < len(instructions), "This might be a bug in parsing"
+                proc_name: str = instructions[proc_id].word.operand.value
+                assert proc_name in procedures, "This might be a bug in parsing"
+                procedure: Procedure = procedures[proc_name]
+                assert procedure.type_checked, "This might be a bug in parsing"
+                expected_inputs: List[Type] = procedure.signature.inputs
+                expected_inputs_as_str: str = str(expected_inputs)
+                if len(stack) < len(expected_inputs):
+                    print_compiler_error("Not enough operands for operation",
+                                         f"{location}: `{proc_name}` expected {len(expected_inputs)} arguments, found {len(stack)} instead:\n"
+                                         f"Expected stack: {expected_inputs_as_str}\n"
+                                         f"Actual stack:   {stack}")
+                else:
+                    # at least arg_count types on stack
+                    # int ptr int -> int
+                    len1 = len(stack)
+                    len2 = len(expected_inputs)
+                    for i in range(len2):
+                        type_on_stack = stack[len1 - i - 1]
+                        expected_type = expected_inputs[len2 - i - 1]
+                        if type_on_stack != expected_type:
+                            print_compiler_error("Type mismatch in type checking",
+                                                 f"{location}: Attempted to call procedure {proc_name} with the wrong argument types:\n"
+                                                 f"Expected stack: {expected_inputs_as_str}\n"
+                                                 f"Actual stack:   {stack}")
+                    for _ in range(len2):
+                        stack.pop()
+                    proc_outputs: List[Type] = procedure.signature.outputs
+                    for out in proc_outputs:
+                        stack.append(out)
+                # pass
+                # assert False, f"{operation} type-checking not implemented yet"
+            elif operation == OpSet.PUSH_GLOBAL_MEM:
+                pass
             else:
-                assert False, f"Not implemented type checking for {operator} yet"
-        elif operator in Keywords:
-            if operator in [Keywords.WHILE, Keywords.IF]:
-                keyword_stack.append((ip, instr, stack.copy()))
-            elif operator == Keywords.DO:
-                pre_do = op[1][0]
-                if pre_do in [Keywords.WHILE, Keywords.IF]:
+                assert False, f"Not implemented type checking for {operation} yet"
+        elif operation in Keyword:
+            # assert False, "Type checking Keyword not refactored yet"
+            if operation == Keyword.MEMORY:
+                pass
+            elif operation in [Keyword.WHILE, Keyword.IF]:
+                stack_checkpoint.append((ip, op, stack.copy()))
+                keyword_stack.append((ip, operation))
+            elif operation == Keyword.DO:
+                pre_do = keyword_stack.pop()
+                pre_do_ip = pre_do[0]
+                pre_do_keyword = pre_do[1]
+                if pre_do_keyword in [Keyword.WHILE, Keyword.IF]:
                     if len(stack) < 1:
                         print_compiler_error("Not enough operands for operation",
-                                             f"{get_instruction_location(instr)}: {operator} expected 1 argument, found {len(stack)} instead: {stack}\n")
+                                             f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}")
                     else:
                         type1 = stack.pop()
-                        if type1 != Types.INT:
+                        if type1 != Type.INT:
                             print_compiler_error("Wrong types for operation",
-                                                 f"{get_instruction_location(instr)}: {operator} expected {[Types.INT]}, found {type1} instead.")
+                                                 f"{location}: {operation} expected {[Type.INT]}, found {type1} instead.")
                 else:
-                    assert False, f"{pre_do} type-checking for Keywords.DO not implemented yet"
-            elif operator == Keywords.ELSE:
-                block = keyword_stack.pop()
+                    assert False, f"{pre_do_keyword} type-checking for Keyword.DO not implemented yet"
+            elif operation == Keyword.ELSE:
+                block: tuple = stack_checkpoint.pop()
                 # block_ip = block[0]
-                block_instr = block[1]
-                block_keyword = block_instr[3][0]
+                block_instr: Instruction = block[1]
+                block_keyword: Operation = block_instr.word.operation
                 block_stack = block[2]
-                assert block_keyword == Keywords.IF, "This should never fail"
-                keyword_stack.append((ip, instr, stack.copy(), block_instr, block_stack.copy()))
+                assert block_keyword == Keyword.IF, "This might be a bug in parsing"
+                stack_checkpoint.append((ip, op, stack.copy(), block_instr, block_stack.copy()))
                 stack = block_stack.copy()
-            elif operator == Keywords.END:
-                block = keyword_stack.pop()
+            elif operation == Keyword.END:
+                block: tuple = stack_checkpoint.pop()
                 # block_ip = block[0]
-                block_instr = block[1]
-                block_keyword = block_instr[3][0]
+                block_instr: Instruction = block[1]
+                block_keyword: Operation = block_instr.word.operation
                 block_stack = block[2]
-                if block_keyword == Keywords.WHILE or block_keyword == Keywords.IF:
+                if block_keyword == Keyword.WHILE:
                     if len(stack) < len(block_stack):
                         print_compiler_error("Stack modification error in type checking",
-                                             f"{get_instruction_location(block_instr)}: `{block_keyword.name}` is not allowed to decrease the size of the stack.")
+                                             f"{block_instr.loc}: `{block_keyword.name}` is not allowed to decrease the size of the stack.")
                     else:
                         pre_stack_len = len(block_stack)
                         post_stack_len = len(stack)
@@ -526,71 +877,70 @@ def type_check_program(instructions):
                         for i in range(stack_len):
                             if stack[i] != block_stack[i]:
                                 print_compiler_error("Stack modification error in type checking",
-                                                     f"{get_instruction_location(block_instr)}: `{block_keyword.name}` is not allowed to modify the types on the stack.\n"
+                                                     f"{block_instr.loc}: `{block_keyword.name}` is not allowed to modify the types on the stack.\n"
                                                      f"Before: {block_stack}\n"
                                                      f"After: {stack}")
-                elif block_keyword == Keywords.ELSE:
-                    if_block = block[3]
-                    if_keyword = if_block[3][0]
-                    assert if_keyword == Keywords.IF, "This should never fail"
-                    if_stack = block[4]
-                    len1 = len(if_stack)
-                    len2 = len(block_stack)
-                    len3 = len(stack)
-                    if not (len1 == len2 == len3):
+                elif block_keyword == Keyword.IF or block_keyword == Keyword.ELSE:
+                    len1 = len(block_stack)
+                    len2 = len(stack)
+                    if not (len1 == len2):
                         print_compiler_error("Stack modification error in type checking",
-                                             f"{get_instruction_location(if_block)}: All `{if_keyword.name}`-branches must result in the same stack.\n"
-                                             f"\tStack before IF: {if_stack}\n"
-                                             f"\tStack before ELSE: {block_stack}\n"
-                                             f"\tStack before END: {stack}")
+                                             f"{block_instr.loc}: All `if`-branches must result in the same stack.\n"
+                                             f"\tStack before `if` : {block_stack}\n"
+                                             f"\tStack before `end`: {stack}")
                     else:
                         for i in range(len1):
-                            if not (stack[i] == block_stack[i] == if_stack[i]):
+                            if not (stack[i] == block_stack[i]):
                                 print_compiler_error("Stack modification error in type checking",
-                                                     f"{get_instruction_location(if_block)}: All `{if_keyword.name}`-branches must result in the same stack.\n"
-                                                     f"\tStack before IF: {if_stack}\n"
-                                                     f"\tStack before ELSE: {block_stack}\n"
-                                                     f"\tStack before END: {stack}")
-
+                                                     f"{block_instr.loc}: All `if`-branches must result in the same stack.\n"
+                                                     f"\tStack before `if` : {block_stack}\n"
+                                                     f"\tStack before `end`: {stack}")
                 else:
-                    assert False, f"{block_keyword} not implemented yet in type-checking Keywords.END"
+                    assert False, f"{block_keyword} not implemented yet in type-checking Keyword.END"
+            elif operation == Keyword.PROC:
+                proc_name: str = op.word.operand.value
+                assert proc_name in procedures, "This might be a bug in parsing"
+                stack_checkpoint.append((ip, op, stack.copy()))
+                procedure: Procedure = procedures[proc_name]
+                proc_inputs: List[Type] = procedure.signature.inputs
+                for t in proc_inputs:
+                    stack.append(t)
+                procedure.type_checked = True
             else:
-                print(keyword_stack)
-                assert False, f"{operator} type-checking not implemented yet"
-            # assert False, "Not implemented yet"
+                # print(stack_checkpoint)
+                assert False, f"{operation} type-checking not implemented yet"
         else:
-            print_compiler_error("Unreachable situation in type checking",
-                                 f"Undefined operator {operator}\n"
-                                 f"{get_instruction_location(instr)}")
+            assert False, "Unreachable - This might be a bug in parsing"
+        # print(operation, stack)
 
     if len(stack) > 0:
         print_compiler_error("Unhandled Data on Stack",
                              f"There are still {len(stack)} item(s) on the stack:\n"
                              f"{stack}\n"
                              "Please make sure that the stack is empty after program is finished executing.",
-                             ErrorTypes.STACK)
+                             ErrorType.STACK)
     return instructions
 
 
-def evaluate_static_equations(instructions):
+def evaluate_static_equations(instructions: List[Instruction]):
     # optimizes instructions like "10 2 1 3 * 4 5 * + - 2 * 7 - + 5 * 15"
     # by evaluating them in the pre-compiler phase and only pushing the result
-    assert len(OpSet) == 24, "Make sure that `stack_op` in" \
+    assert len(OpSet) == 31, "Make sure that `stack_op` in" \
                              "`evaluate_static_equations()` is up to date."
     # Last OP in our instruction set that is arithmetic
     # All Enum values less than that are available to be pre-evaluated
     new_code = []
     instr_stack = []
     for op in instructions:
-        instr = op[3]
-        if instr[0] in [OpSet.PUSH_INT, OpSet.ADD_INT, OpSet.SUB_INT, OpSet.MUL_INT, OpSet.DIV_INT, OpSet.MOD_INT]:
+        instr = op.word.operation
+        if instr in [OpSet.PUSH_INT, OpSet.ADD_INT, OpSet.SUB_INT, OpSet.MUL_INT, OpSet.DIV_INT, OpSet.MOD_INT]:
             instr_stack.append(op)
         else:
             if len(instr_stack) > 0:
                 push_op = 0
                 math_op = 0
                 for s in instr_stack:
-                    if s[3][0] == OpSet.PUSH_INT:
+                    if s.word.operation == OpSet.PUSH_INT:
                         push_op += 1
                     else:
                         math_op += 1
@@ -607,27 +957,27 @@ def evaluate_static_equations(instructions):
                     try:
                         stack = []
                         for s in instr_stack:
-                            stack_op = s[3]
+                            stack_op = s.word.operation
                             # print(f"  {s}")
-                            if stack_op[0] == OpSet.PUSH_INT:
-                                stack.append(stack_op[1])
-                            elif stack_op[0] == OpSet.ADD_INT:
+                            if stack_op == OpSet.PUSH_INT:
+                                stack.append(s.word.operand.value)
+                            elif stack_op == OpSet.ADD_INT:
                                 a = stack.pop()
                                 b = stack.pop()
                                 stack.append(a + b)
-                            elif stack_op[0] == OpSet.SUB_INT:
+                            elif stack_op == OpSet.SUB_INT:
                                 a = stack.pop()
                                 b = stack.pop()
                                 stack.append(b - a)
-                            elif stack_op[0] == OpSet.MUL_INT:
+                            elif stack_op == OpSet.MUL_INT:
                                 a = stack.pop()
                                 b = stack.pop()
                                 stack.append(a * b)
-                            elif stack_op[0] == OpSet.DIV_INT:
+                            elif stack_op == OpSet.DIV_INT:
                                 a = stack.pop()
                                 b = stack.pop()
                                 stack.append(int(b / a))
-                            elif stack_op[0] == OpSet.MOD_INT:
+                            elif stack_op == OpSet.MOD_INT:
                                 a = stack.pop()
                                 b = stack.pop()
                                 stack.append(int(b % a))
@@ -635,7 +985,9 @@ def evaluate_static_equations(instructions):
                         # print("Result: " + str(result))
                         last_instr = instr_stack[-1]
                         # print(f"Last instruction: {last_instr}")
-                        new_instr = (last_instr[0], last_instr[1], last_instr[2], (OpSet.PUSH_INT, result))
+                        new_instr = Instruction(loc=last_instr.loc, word=Operation(operation=OpSet.PUSH_INT,
+                                                                                   operand=DataTuple(typ=Type.INT,
+                                                                                                     value=result)))
                         instr_stack = []
                         # print(f"Sequence breaker: {op}")
                         # print("*********************")
@@ -649,122 +1001,13 @@ def evaluate_static_equations(instructions):
     return new_code
 
 
-def tidy_memory(memory):
-    memory = memory[1:][:-1]
-    if len(memory) % 2 != 0:
-        memory_as_string = ""
-        for mem in memory:
-            memory_as_string = memory_as_string + mem[3] + ", "
-        if len(memory_as_string) > 0:
-            memory_as_string = memory_as_string[:-2]
-        print_compiler_error("Memory block is not aligned properly.",
-                             "Expected memory block of form `var1 value1 var2 value2 ...`,\n"
-                             "but memory size is not even.\n"
-                             f"Found {len(memory)} elements: " +
-                             memory_as_string)
-    new_memory = []
-    for i in range(0, len(memory), 2):
-        new_memory.append((memory[i][3], memory[i + 1][3]))
-    return new_memory
-
-
-def simulate_code(instructions, mem):
-    assert len(OpSet) == 19, "Not all OP can be simulated yet"
-    stack = []
-    memory = {}
-    for m in mem:
-        memory[m[0]] = 0
-    index = 0
-    while index < len(instructions):
-        op = instructions[index][3]
-        if op in memory:
-            stack.append(op)
-            index += 1
-        elif op[0] == OpSet.PUSH:
-            stack.append(op[1])
-            index += 1
-        elif op[0] == OpSet.ADD_INT:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(a + b)
-            index += 1
-        elif op[0] == OpSet.SUB_INT:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(b - a)
-            index += 1
-        elif op[0] == OpSet.MUL_INT:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(a * b)
-            index += 1
-        elif op[0] == OpSet.DIV_INT:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(int(b / a))
-            index += 1
-        elif op[0] == OpSet.MOD_INT:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(int(b % a))
-            index += 1
-        elif op[0] == OpSet.PRINT_INT:
-            print(stack.pop())
-            index += 1
-        elif op[0] == OpSet.IF or op[0] == OpSet.WHILE:
-            index += 1
-            pass
-        elif op[0] == OpSet.SET_INT:
-            variable = stack.pop()
-            value = stack.pop()
-            memory[variable] = value
-            index += 1
-        elif op[0] == OpSet.GET_INT:
-            variable = stack.pop()
-            value = memory[variable]
-            stack.append(value)
-            index += 1
-        elif op[0] == OpSet.EQ:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(int(a == b))
-            index += 1
-        elif op[0] == OpSet.NEQ:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(int(a != b))
-            index += 1
-        elif op[0] == OpSet.LT:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(int(b < a))
-            index += 1
-        elif op[0] == OpSet.GT:
-            a = stack.pop()
-            b = stack.pop()
-            stack.append(int(b > a))
-            index += 1
-        elif op[0] == OpSet.DO:
-            a = stack.pop()
-            if a == 0:
-                index += op[2]
-            index += 1
-        elif op[0] == OpSet.END:
-            index += op[1]
-        elif op[0] == OpSet.ELSE:
-            index += op[1]
-            index += 1
-        else:
-            print_compiler_error("Unknown operation!",
-                                 f"Can't simulate unknown op {op}")
-
-
 # Create Obj file: nasm -f win64 output.asm -o output.obj
 # Link Obj together: golink /no /console /entry main output.obj MSVCRT.dll kernel32.dll
 # Call Program: output.exe
-def compile_code(program_name, instructions, memory, strings, labels, opt_flags: dict):
-    assert len(OpSet) == 24, "Not all OP can be compiled yet"
-    assert len(Keywords) == 5, "Not all Keywords can be compiled yet"
+def compile_code(program_name: str, instructions: List[Instruction], procedures: dict[str, Procedure],
+                 memory: List[Memory], strings: List[tuple], labels: List[DataTuple], opt_flags: dict):
+    assert len(OpSet) == 31, "Not all OP can be compiled yet"
+    assert len(Keyword) == 7, "Not all Keywords can be compiled yet"
     silenced = opt_flags['-m']
     optimized = opt_flags['-o']
     keep_asm = opt_flags['-a']
@@ -773,6 +1016,223 @@ def compile_code(program_name, instructions, memory, strings, labels, opt_flags:
     with open(name + ".tmp", "w") as output:
         output.write(f"  ; Generated code for {program_name}\n")
         output.write("default rel\n")
+        output.write("\n")
+        output.write("segment .text\n"
+                     "  global main\n"
+                     "  extern ExitProcess\n"
+                     "  extern printf\n")
+        output.write("\n")
+        output.write("main:\n")
+        output.write("    mov rax, ret_stack_end\n")
+        output.write("    mov [ret_stack_rsp], rax\n")
+
+        output.write("  push rbp\n"
+                     "  mov rbp, rsp\n"
+                     "  sub rsp, 32\n")
+        for i, op in enumerate(instructions):
+            location: Location = op.loc
+            word: Operation = op.word
+            operation: Union[Keyword, OpSet] = word.operation
+            operand: Optional[Type] = word.operand
+            for jmp in labels:
+                if i == jmp.value:
+                    output.write(f"{label_name}_{i}:\n")
+            output.write(f"; -- {op} --\n")
+            if operation in OpSet:
+                if operation == OpSet.SWAP:
+                    output.write(f"  pop rbx\n")
+                    output.write(f"  pop rax\n")
+                    output.write(f"  push rbx\n")
+                    output.write(f"  push rax\n")
+                elif operation == OpSet.ROT:
+                    output.write(f"  pop rcx\n")
+                    output.write(f"  pop rbx\n")
+                    output.write(f"  pop rax\n")
+                    output.write(f"  push rbx\n")
+                    output.write(f"  push rcx\n")
+                    output.write(f"  push rax\n")
+                elif operation == OpSet.DUP:
+                    output.write(f"  pop rax\n")
+                    output.write(f"  push rax\n")
+                    output.write(f"  push rax\n")
+                elif operation == OpSet.DROP:
+                    output.write(f"  pop rax\n")
+                elif operation == OpSet.OVER:
+                    output.write(f"  pop rbx\n")
+                    output.write(f"  pop rax\n")
+                    output.write(f"  push rax\n")
+                    output.write(f"  push rbx\n")
+                    output.write(f"  push rax\n")
+                elif operation == OpSet.PUSH_INT:
+                    output.write(f"  mov rax, qword {operand.value}\n")
+                    output.write(f"  push rax\n")
+                elif operation == OpSet.PUSH_PTR:
+                    output.write(f"  push {operand.value}\n")
+                elif operation == OpSet.PUSH_STR:
+                    output.write(f"  push {operand.value}\n")
+                elif operation == OpSet.ADD_INT or operation == OpSet.ADD_PTR:
+                    output.write("  pop rax\n")
+                    output.write("  pop rbx\n")
+                    output.write("  add rax, rbx\n")
+                    output.write("  push rax\n")
+                elif operation == OpSet.SUB_INT or operation == OpSet.SUB_PTR:
+                    output.write("  pop rax\n")
+                    output.write("  pop rbx\n")
+                    output.write("  sub rbx, rax\n")
+                    output.write("  push rbx\n")
+                elif operation == OpSet.MUL_INT:
+                    output.write("  pop rax\n")
+                    output.write("  pop rbx\n")
+                    output.write("  mul rbx\n")
+                    output.write("  push rax\n")
+                elif operation == OpSet.DIV_INT:
+                    output.write("  pop rbx\n")
+                    output.write("  pop rax\n")
+                    output.write("  mov rdx, 0\n")
+                    output.write("  cqo\n")
+                    output.write("  idiv rbx\n")
+                    output.write("  push rax\n")
+                elif operation == OpSet.MOD_INT:
+                    output.write("  pop rbx\n")
+                    output.write("  pop rax\n")
+                    output.write("  mov rdx, 0\n")
+                    output.write("  div rbx\n")
+                    output.write("  push rdx\n")
+                elif operation == OpSet.PRINT_INT:
+                    output.write("  pop rax\n")
+                    output.write("  push rbp\n"
+                                 "  mov rbp, rsp\n"
+                                 "  sub rsp, 32\n")
+                    output.write("  mov rdx, rax\n")
+                    output.write("  lea rcx, [format_string]\n")
+                    output.write("  call printf\n")
+                    output.write("  add rsp, 32\n"
+                                 "  pop rbp\n")
+                elif operation == OpSet.PRINT_STR:
+                    output.write("  pop rax\n")
+                    output.write("  push rbp\n"
+                                 "  mov rbp, rsp\n"
+                                 "  sub rsp, 32\n")
+                    output.write("  lea rcx, [rax]\n")
+                    output.write("  call printf\n")
+                    output.write("  add rsp, 32\n"
+                                 "  pop rbp\n")
+                elif operation == OpSet.EQ:
+                    output.write("  pop rax\n")
+                    output.write("  pop rbx\n")
+                    output.write("  sub rbx, rax\n")
+                    output.write("  lahf\n")
+                    output.write("  shr rax, 14\n")
+                    output.write("  and rax, 1\n")
+                    output.write("  push rax\n")
+                elif operation == OpSet.NEQ:
+                    output.write("  pop rax\n")
+                    output.write("  pop rbx\n")
+                    output.write("  sub rbx, rax\n")
+                    output.write("  lahf\n")
+                    output.write("  shr rax, 14\n")
+                    output.write("  not rax\n")
+                    output.write("  and rax, 1\n")
+                    output.write("  push rax\n")
+                elif operation == OpSet.LT:
+                    output.write("  pop rax\n")
+                    output.write("  pop rbx\n")
+                    output.write("  sub rbx, rax\n")
+                    output.write("  lahf\n")
+                    output.write("  shr rax, 15\n")
+                    output.write("  and rax, 1\n")
+                    output.write("  push rax\n")
+                elif operation == OpSet.GT:
+                    output.write("  pop rbx\n")
+                    output.write("  pop rax\n")
+                    output.write("  sub rbx, rax\n")
+                    output.write("  lahf\n")
+                    output.write("  shr rax, 15\n")
+                    output.write("  and rax, 1\n")
+                    output.write("  push rax\n")
+                elif operation == OpSet.SET_INT:
+                    # value var set_int
+                    output.write("  pop rax\n")
+                    # rax contains var
+                    output.write("  pop rbx\n")
+                    # rbx contains val
+                    output.write("  mov [rax], rbx\n")
+                elif operation == OpSet.GET_INT:
+                    # var get_int
+                    output.write(f"  pop rax\n")
+                    # rax contains ptr to var
+                    output.write(f"  mov rbx, [rax]\n")
+                    # rbx contains value of var
+                    output.write("  push rbx\n")
+                elif operation == OpSet.SET_BYTE:
+                    # value var set_int
+                    output.write("  pop rax\n")
+                    # rax contains var
+                    output.write("  pop rbx\n")
+                    # rbx contains val
+                    output.write("  mov [rax], bl\n")
+                elif operation == OpSet.GET_BYTE:
+                    # var get_int
+                    output.write("    pop rax\n")
+                    # rax contains ptr to var
+                    output.write("    xor rbx, rbx\n")
+                    output.write("    mov bl, [rax]\n")
+                    # rbx contains value of var
+                    output.write("    push rbx\n")
+                elif operation == OpSet.CALL_PROC:
+                    proc_start = op.word.operand.value
+                    output.write("  mov rax, rsp\n")
+                    output.write("  mov rsp, [ret_stack_rsp]\n")
+                    output.write(f"  call {label_name}_{proc_start}\n")
+                    output.write("  mov [ret_stack_rsp], rsp\n")
+                    output.write("  mov rsp, rax\n")
+                elif operation == OpSet.PREP_PROC:
+                    output.write("  sub rsp, 32\n")
+                    output.write("  mov [ret_stack_rsp], rsp\n")
+                    output.write("  mov rsp, rax\n")
+                elif operation == OpSet.RET_PROC:
+                    output.write("  mov rax, rsp\n")
+                    output.write("  mov rsp, [ret_stack_rsp]\n")
+                    output.write("  add rsp, 32\n")
+                    output.write("  ret\n")
+                elif operation == OpSet.PUSH_LOCAL_MEM:
+                    assert False, "PUSH_LOCAL_MEM can't be compiled yet"
+                elif operation == OpSet.PUSH_GLOBAL_MEM:
+                    pass
+                else:
+                    assert False, f"Unreachable - This means that an operation can't be compiled yet, namely: {operation}"
+            elif operation in Keyword:
+                if operation == Keyword.IF or operation == Keyword.WHILE:
+                    pass
+                elif operation == Keyword.ELSE:
+                    assert op.word.operand.typ == Type.INT, "This could be a bug while parsing."
+                    end_goal = i + op.word.operand.value + 1
+                    output.write(f"  jmp {label_name}_{end_goal}\n")
+                elif operation == Keyword.DO:
+                    assert op.word.operand.typ == Type.INT, "This could be a bug while parsing."
+                    end_goal = i + op.word.operand.value + 1
+                    output.write("  pop rax\n")
+                    output.write("  test rax, rax\n")
+                    output.write(f"  jz {label_name}_{end_goal}\n")
+                elif operation == Keyword.END:
+                    assert op.word.operand.typ == Type.INT, "This could be a bug while parsing."
+                    if op.word.operand.value == 1:
+                        pass
+                    else:
+                        end_goal = i + op.word.operand.value + 1
+                        output.write(f"  jmp {label_name}_{end_goal}\n")
+                elif operation == Keyword.PROC:
+                    proc = procedures[operand.value]
+                    output.write(f"  jmp {label_name}_{proc.end + 1}\n")
+                else:
+                    assert False, f"Unreachable - This means that a keyword can't be compiled yet, namely: {operation}"
+            else:
+                print_compiler_error(f"Compilation failed",
+                                     f"at {location}: {operation} can't be compiled yet.")
+        output.write("\n")
+        output.write(f"{label_name}_{len(instructions)}:\n")
+        output.write("  xor rcx, rcx\n")
+        output.write("  call ExitProcess\n")
         output.write("\n")
         output.write("segment .data\n")
         output.write("  format_string db \"%lld\", 0xd, 0xa, 0\n")
@@ -794,181 +1254,12 @@ def compile_code(program_name, instructions, memory, strings, labels, opt_flags:
             output.write(f"  {label} db {hex_value}")
         output.write("\n")
         output.write("segment .bss\n")
+        output.write("  ret_stack_rsp resb 8\n")
+        output.write("  ret_stack resb 4194304\n")
+        output.write("  ret_stack_end resb 8\n")
         for var in memory:
-            output.write(f"  {var[0]} resb {var[1]}\n")
+            output.write(f"  {var.name} resb {var.size}\n")
         output.write("\n")
-        output.write("segment .text\n"
-                     "  global main\n"
-                     "  extern ExitProcess\n"
-                     "  extern printf\n")
-        output.write("\n")
-        output.write("main:\n")
-        output.write("  push rbp\n"
-                     "  mov rbp, rsp\n"
-                     "  sub rsp, 32\n")
-        for i, op in enumerate(instructions):
-            op = op[3]
-            if i in labels:
-                output.write(f"{label_name}_{i}:\n")
-            output.write(f"; -- {op} --\n")
-            if op[0] in OpSet:
-                if op[0] == OpSet.SWAP:
-                    output.write(f"  pop rbx\n")
-                    output.write(f"  pop rax\n")
-                    output.write(f"  push rbx\n")
-                    output.write(f"  push rax\n")
-                elif op[0] == OpSet.ROT:
-                    output.write(f"  pop rcx\n")
-                    output.write(f"  pop rbx\n")
-                    output.write(f"  pop rax\n")
-                    output.write(f"  push rbx\n")
-                    output.write(f"  push rcx\n")
-                    output.write(f"  push rax\n")
-                elif op[0] == OpSet.DUP:
-                    output.write(f"  pop rax\n")
-                    output.write(f"  push rax\n")
-                    output.write(f"  push rax\n")
-                elif op[0] == OpSet.DROP:
-                    output.write(f"  pop rax\n")
-                elif op[0] == OpSet.OVER:
-                    output.write(f"  pop rbx\n")
-                    output.write(f"  pop rax\n")
-                    output.write(f"  push rax\n")
-                    output.write(f"  push rbx\n")
-                    output.write(f"  push rax\n")
-                elif op[0] == OpSet.PUSH_INT:
-                    value = op[1][1]
-                    output.write(f"  mov rax, qword {value}\n")
-                    output.write(f"  push rax\n")
-                elif op[0] == OpSet.PUSH_PTR:
-                    value = op[1][1]
-                    output.write(f"  push {value}\n")
-                elif op[0] == OpSet.PUSH_STR:
-                    value = op[1][1]
-                    output.write(f"  push {value}\n")
-                elif op[0] == OpSet.ADD_INT or op[0] == OpSet.ADD_PTR:
-                    output.write("  pop rax\n")
-                    output.write("  pop rbx\n")
-                    output.write("  add rax, rbx\n")
-                    output.write("  push rax\n")
-                elif op[0] == OpSet.SUB_INT or op[0] == OpSet.SUB_PTR:
-                    output.write("  pop rax\n")
-                    output.write("  pop rbx\n")
-                    output.write("  sub rbx, rax\n")
-                    output.write("  push rbx\n")
-                elif op[0] == OpSet.MUL_INT:
-                    output.write("  pop rax\n")
-                    output.write("  pop rbx\n")
-                    output.write("  mul rbx\n")
-                    output.write("  push rax\n")
-                elif op[0] == OpSet.DIV_INT:
-                    output.write("  pop rbx\n")
-                    output.write("  pop rax\n")
-                    output.write("  mov rdx, 0\n")
-                    output.write("  cqo\n")
-                    output.write("  idiv rbx\n")
-                    output.write("  push rax\n")
-                elif op[0] == OpSet.MOD_INT:
-                    output.write("  pop rbx\n")
-                    output.write("  pop rax\n")
-                    output.write("  mov rdx, 0\n")
-                    output.write("  div rbx\n")
-                    output.write("  push rdx\n")
-                elif op[0] == OpSet.PRINT_INT:
-                    output.write("  pop rax\n")
-                    output.write("  push rbp\n"
-                                 "  mov rbp, rsp\n"
-                                 "  sub rsp, 32\n")
-                    output.write("  mov rdx, rax\n")
-                    output.write("  lea rcx, [format_string]\n")
-                    output.write("  call printf\n")
-                    output.write("  add rsp, 32\n"
-                                 "  pop rbp\n")
-                elif op[0] == OpSet.PRINT_STR:
-                    output.write("  pop rax\n")
-                    output.write("  push rbp\n"
-                                 "  mov rbp, rsp\n"
-                                 "  sub rsp, 32\n")
-                    output.write("  lea rcx, [rax]\n")
-                    output.write("  call printf\n")
-                    output.write("  add rsp, 32\n"
-                                 "  pop rbp\n")
-                elif op[0] == OpSet.EQ:
-                    output.write("  pop rax\n")
-                    output.write("  pop rbx\n")
-                    output.write("  sub rbx, rax\n")
-                    output.write("  lahf\n")
-                    output.write("  shr rax, 14\n")
-                    output.write("  and rax, 1\n")
-                    output.write("  push rax\n")
-                elif op[0] == OpSet.NEQ:
-                    output.write("  pop rax\n")
-                    output.write("  pop rbx\n")
-                    output.write("  sub rbx, rax\n")
-                    output.write("  lahf\n")
-                    output.write("  shr rax, 14\n")
-                    output.write("  not rax\n")
-                    output.write("  and rax, 1\n")
-                    output.write("  push rax\n")
-                elif op[0] == OpSet.LT:
-                    output.write("  pop rax\n")
-                    output.write("  pop rbx\n")
-                    output.write("  sub rbx, rax\n")
-                    output.write("  lahf\n")
-                    output.write("  shr rax, 15\n")
-                    output.write("  and rax, 1\n")
-                    output.write("  push rax\n")
-                elif op[0] == OpSet.GT:
-                    output.write("  pop rbx\n")
-                    output.write("  pop rax\n")
-                    output.write("  sub rbx, rax\n")
-                    output.write("  lahf\n")
-                    output.write("  shr rax, 15\n")
-                    output.write("  and rax, 1\n")
-                    output.write("  push rax\n")
-                elif op[0] == OpSet.SET_INT:
-                    # value var set_int
-                    output.write("  pop rax\n")
-                    # rax contains var
-                    output.write("  pop rbx\n")
-                    # rbx contains val
-                    output.write("  mov [rax], rbx\n")
-                elif op[0] == OpSet.GET_INT:
-                    # var get_int
-                    output.write(f"  pop rax\n")
-                    # rax contains ptr to var
-                    output.write(f"  mov rbx, [rax]\n")
-                    # rbx contains value of var
-                    output.write("  push rbx\n")
-                else:
-                    assert False, f"Unreachable - This means that an operation can't be compiled yet, namely: {op[0]}"
-            elif op[0] in Keywords:
-                if op[0] == Keywords.IF or op[0] == Keywords.WHILE:
-                    pass
-                elif op[0] == Keywords.ELSE:
-                    end_goal = i + op[1] + 1
-                    output.write(f"  jmp {label_name}_{end_goal}\n")
-                elif op[0] == Keywords.DO:
-                    if op[1][0] == Keywords.IF or op[1][0] == Keywords.WHILE:
-                        end_goal = i + op[2] + 1
-                        output.write("  pop rax\n")
-                        output.write("  test rax, rax\n")
-                        output.write(f"  jz {label_name}_{end_goal}\n")
-                    else:
-                        print_compiler_error("Compiling DO not implemented yet")
-                elif op[0] == Keywords.END:
-                    if op[1] == 1:
-                        pass
-                    else:
-                        end_goal = i + op[1] + 1
-                        output.write(f"  jmp {label_name}_{end_goal}\n")
-            else:
-                print(f"`{op}` can't be compiled yet")
-                exit(1)
-        output.write("\n")
-        output.write(f"{label_name}_{len(instructions)}:\n")
-        output.write("  xor rcx, rcx\n")
-        output.write("  call ExitProcess\n")
 
     if not silenced:
         print(f"[INFO] Generated {name}.tmp")
@@ -1101,8 +1392,6 @@ def get_help(flag):
     match flag:
         case '-h':
             return "Shows this help screen."
-        case '-s':
-            return "Simulates the given input code in Python."
         case '-c':
             return "Compiles the given input code and generates a single executable."
         case '-d':
@@ -1113,21 +1402,23 @@ def get_help(flag):
             return "Mutes compilation command line output."
         case '-a':
             return "Keeps generated Assembly file after compilation."
+        case '-unsafe':
+            return "Disables type checking."
         case _:
             return "[No description]"
 
 
 def get_usage(program_name):
     return f"Usage: {program_name} [-h] <input.hpt> " \
-           f"[-s | -c | -d] [-o, -m, -a]\n" \
+           f"[-c | -d] [-o, -m, -a, -unsafe]\n" \
            f"       If you need more help, run `{program_name} -h`"
 
 
 def main():
     # TODO: Add Strings, Arrays, Functions
-    flags = ['-h', '-s', '-c', '-d', '-o', '-m', '-a']
-    exec_flags = flags[1:4]
-    optional_flags = flags[4:]
+    flags = ['-h', '-c', '-d', '-o', '-m', '-a', '-unsafe']
+    exec_flags = flags[1:3]
+    optional_flags = flags[3:]
     opt_flags = dict(zip(optional_flags, [False] * len(optional_flags)))
     program_name, sys.argv = shift(sys.argv)
     program_name = program_name.split("\\")[-1]
@@ -1136,8 +1427,9 @@ def main():
                              f"{get_usage(program_name)}\n")
     if sys.argv[0] == '-h':
         print(get_usage(program_name))
+        print("Supported flags:")
         for flag in flags:
-            print(f"{flag}:\t" + get_help(flag))
+            print(f"    {flag}: " + get_help(flag))
         exit(0)
     if len(sys.argv) < 2:
         print_compiler_error("Not enough parameters!",
@@ -1158,13 +1450,6 @@ def main():
         print_compiler_error("Third Parameter has to be an execution flag!",
                              get_usage(program_name))
 
-    instructions, memory, strings = parse_instructions(code)
-    instructions, labels = cross_reference(instructions)
-    instructions = type_check_program(instructions)
-    instructions = evaluate_static_equations(instructions)
-
-    memory = tidy_memory(memory)
-
     if len(sys.argv) > 0:
         opt_args = sys.argv
         for opt in opt_args:
@@ -1174,16 +1459,19 @@ def main():
             else:
                 opt_flags[opt] = True
 
-    if run_flag == '-s':
-        simulate_code(instructions, memory)
-    elif run_flag == '-c':
-        compile_code(input_file, instructions, memory, strings, labels, opt_flags)
+    instructions, procedures, memory, strings, labels = parse_instructions(code)
+    if not opt_flags['-unsafe']:
+        instructions = type_check_program(instructions, procedures)
+    instructions = evaluate_static_equations(instructions)
+
+    if run_flag == '-c':
+        compile_code(input_file, instructions, procedures, memory, strings, labels, opt_flags)
     elif run_flag == '-d':
         for i, mem in enumerate(memory):
-            print(mem[0] + ": " + mem[1] + " bytes")
+            print(f"{mem.name}: {mem.size} bytes")
         print("*" * 50)
         for i, op in enumerate(instructions):
-            print(i, op[3])
+            print(i, op.word)
         exit(1)
     else:
         print(f"Unknown flag `{run_flag}`")

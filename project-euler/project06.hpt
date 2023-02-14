@@ -1,9 +1,8 @@
-mem
-    limit 8
-    number 8
-    sum_square 8
-    sum_number 8
-end
+memory limit 8 end
+memory number 8 end
+memory sum_square 8 end
+memory sum_number 8 end
+
 100 limit !64
 0 number !64
 0 sum_square !64

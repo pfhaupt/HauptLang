@@ -1,1 +1,11 @@
-"Hello World!\n" puts
+
+proc decrement int -> int do
+  if dup 0 > do
+    dup puti
+    1 - decrement
+  else
+    0 drop
+  end
+end
+
+10 decrement puti

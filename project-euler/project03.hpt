@@ -1,7 +1,5 @@
-mem
-    n 8
-    factor 8
-end
+memory n 8 end
+memory factor 8 end
 
 600851475143 n !64
 2 factor !64

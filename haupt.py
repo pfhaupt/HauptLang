@@ -395,7 +395,7 @@ def load_from_file(file_path: str):
 
 
 def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory], constants: List[Constant], procedures: dict[str, Procedure]):
-   if len(code) - ip < 4:
+    if len(code) - ip < 4:
         # we need 4 words for each block
         # ip points at number 1
         print_compiler_error("Not enough words for memory block")

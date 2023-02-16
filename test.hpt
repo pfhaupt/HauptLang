@@ -1,32 +1,4 @@
-#1
-#if dup 1 == do
-#  1 puti "\n" puts
-#  "HELLO"
-#elif dup 2 == do
-#  2 puti "\n" puts
-#  "HELLO"
-#elif dup 3 == do
-#  3 puti "\n" puts
-#  "HELLO"
-#elif dup 4 == do
-#  4 puti "\n" puts
-#  "HELLO"
-#else
-#  0 puti "\n" puts
-#  "HELLO"
-#end
-#puts "\n" puts
-#if dup 1 == do
-#  1 puti "\n" puts
-#elif dup 2 == do
-#  2 puti "\n" puts
-#end
-#
-#if 1 do
-#else
-#end
-#
-#if 1 do
-#
-#end
-#puti "\n" puts
+const str new_line "\n" end
+const int blub 12 end
+
+blub blub * puti

@@ -146,6 +146,7 @@ class Keyword(Enum):
     MEMORY = auto()
     PROC = auto()
     INCLUDE = auto()
+    CONSTANT = auto()
 
 
 KEYWORD_LOOKUP: dict[str, Keyword] = {
@@ -158,6 +159,7 @@ KEYWORD_LOOKUP: dict[str, Keyword] = {
     "memory": Keyword.MEMORY,
     "proc": Keyword.PROC,
     "include": Keyword.INCLUDE,
+    "const": Keyword.CONSTANT,
 }
 assert len(Keyword) == len(KEYWORD_LOOKUP), "Not all Keywords are in the lookup table yet!"
 
@@ -275,6 +277,13 @@ class KeywordParsingInfo:
         self.pre_info = pre  # always typeof KeywordParsingInfo
 
 
+@dataclass
+class Constant:
+    location: Location
+    name: str
+    content: DataTuple
+
+
 def print_compiler_error(err, info="", error_type=ErrorType.NORMAL):
     match error_type:
         case ErrorType.NORMAL:
@@ -304,6 +313,24 @@ def check_string(s):
         if not char.isalnum() and char != '_':
             return False
     return True
+
+
+def check_name_availability(variable: Token, code: List[Token], constants: List[Constant], global_memory: List[Memory], procedures: dict[str, Procedure]):
+    variable_name: str = variable.name
+    for mem in global_memory:
+        if variable_name == mem.name:
+            print_compiler_error("Name conflict.",
+                                 f"{variable.loc}: {variable_name} is already defined here:\n"
+                                 f"  {mem.loc} with a size of {mem.size} bytes.")
+    for const in constants:
+        if variable_name == const.name:
+            print_compiler_error("Name conflict.",
+                                 f"{variable.loc}: {variable_name} is already defined here: {const.location}")
+    for proc in procedures:
+        if variable_name == proc:
+            loc: Location = code[procedures[proc].start].loc
+            print_compiler_error("Name conflict.",
+                                 f"{variable.loc}: {variable_name} is already defined here: {loc}")
 
 
 def get_lines(lines: List):
@@ -364,7 +391,7 @@ def load_from_file(file_path: str):
                 for (col, token) in get_token_in_line(line)]
 
 
-def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory]):
+def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory], constants: List[Constant], procedures: dict[str, Procedure]):
     # Syntax: memory variable byte_count end
     if len(code) - ip < 4:
         # we need 4 words for each block
@@ -374,7 +401,7 @@ def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory]):
     variable: Token = code[ip]
     variable_name: str = variable.name
     if not check_string(variable_name):
-        if not variable_name[0].isalpha():
+        if not variable_name[0].isalpha() and variable_name[0] != "_":
             error_descr = f"{variable.loc}: The name is only allowed to start with a letter or underscore\n" \
                           f"Found: {variable_name}"
         else:
@@ -387,14 +414,7 @@ def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory]):
                              f"{variable.loc}: Name is reserved.\n"
                              f"Found: {variable_name}")
     else:
-        for mem in global_memory:
-            if variable_name == mem.name:
-                print_compiler_error("Redefinition of memory block.",
-                                     f"{variable.loc}: {variable_name} is already defined here:\n"
-                                     f"  {mem.loc} with a size of {mem.size} bytes.")
-                print("Oh no")
-                exit(1)
-        pass
+        check_name_availability(variable, code, constants, global_memory, procedures)
         # print("valid name")
     ip += 1
     byte_count: Token = code[ip]
@@ -430,7 +450,7 @@ def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory]):
     return ip, Memory(loc=variable.loc, name=variable_name, size=size)
 
 
-def parse_procedure_signature(code: List[Token], ip: int):
+def parse_procedure_signature(code: List[Token], ip: int, global_memory: List[Memory], constants: List[Constant], procedures: dict[str, Procedure]):
     if len(code) - ip < 4:
         # we need *at minimum* 4 words for a valid procedure: proc name do end
         # ip points at number 1
@@ -438,6 +458,7 @@ def parse_procedure_signature(code: List[Token], ip: int):
     ip += 1
     proc_name_token: Token = code[ip]
     proc_name = proc_name_token.name
+    check_name_availability(proc_name_token, code, constants, global_memory, procedures)
     # print(proc_name_token)
     ip += 1
     next_token: Token = code[ip]
@@ -480,6 +501,63 @@ def parse_procedure_signature(code: List[Token], ip: int):
     return ip, proc_name, proc_signature
 
 
+def parse_constant_block(code: List[Token], ip: int, global_memory: List[Memory], constants: List[Constant], procedures: dict[str, Procedure]):
+    if len(code) - ip < 5:
+        # we need *at minimum* 5 words for a valid constant: const type name value end
+        # ip points at number 1
+        print_compiler_error("Not enough words for constant definition")
+
+    ip += 1
+    type_token: Token = code[ip]
+    type_name: str = type_token.name
+    if type_name not in TYPES_LOOKUP:
+        print_compiler_error("Unexpected Token for `const` definition",
+                             f"{type_token.loc}: Undefined type `{type_name}`")
+    if type_name == "ptr":
+        print_compiler_error("Illegal type for `const` definition",
+                             f"{type_token.loc}: Constants can't be of type Pointer.")
+    const_type: Type = TYPES_LOOKUP[type_name]
+    ip += 1
+    name_token: Token = code[ip]
+    name_name: str = name_token.name
+    if not check_string(name_name):
+        if not name_name[0].isalpha() and name_name[0] != "_":
+            error_descr = f"{name_token.loc}: The name is only allowed to start with a letter or underscore\n" \
+                          f"Found: {name_name}"
+        else:
+            error_descr = f"{name_token.loc}: The name can only consist of letters, numbers and `_`\n" \
+                          f"Found: {name_name}"
+        print_compiler_error("Invalid name for `const` definition",
+                             error_descr)
+
+    const_location: Location = name_token.loc
+    const_name: str = name_name
+    ip += 1
+    value_token: Token = code[ip]
+    value_name: str = value_token.name
+    if const_type == Type.INT:
+        if not value_name.isdigit():
+            print_compiler_error("Invalid value for `const` definition",
+                                 f"{value_token.loc}: Expected number, found `{value_name}`")
+        const_value: int = int(value_name)
+    elif const_type == Type.STR:
+        if not (value_name.startswith("\"") and value_name.endswith("\"")):
+            print_compiler_error("Invalid value for `const` definition",
+                                 f"{value_token.loc}: Expected string, found `{value_name}`")
+        const_value: str = value_name[1:-1]
+    else:
+        assert False, "Unreachable"
+
+    ip += 1
+    end_token: Token = code[ip]
+    end_name: str = end_token.name
+    if not end_name == "end":
+        print_compiler_error("Unexpected Token",
+                             f"{end_token.loc}: Expected `end`, found `{end_name}`")
+
+    return ip, Constant(location=const_location, name=const_name, content=DataTuple(typ=const_type, value=const_value))
+
+
 def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_included_files: List[Token]):
     global PARSE_COUNT
     PARSE_COUNT += 1
@@ -489,6 +567,7 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
     instructions: List[Instruction] = []
     jump_labels: List[DataTuple] = []
     included_files: List[Token] = pre_included_files
+    constants: List[Constant] = []
 
     inside_proc: bool = False
     current_proc: str = ""
@@ -508,7 +587,7 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
         elif name in KEYWORD_LOOKUP:
             # print(f"Found keyword {name}")
             if name == "memory":
-                ip, memory_unit = parse_memory_block(code, ip, global_memory)
+                ip, memory_unit = parse_memory_block(code, ip, global_memory, constants, procedures)
                 if inside_proc:
                     print_compiler_error("Local memory is not supported yet",
                                          f"{location}: Unexpected word.")
@@ -528,23 +607,23 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                 if inside_proc:
                     print_compiler_error("Unexpected word",
                                          f"{location}: You can't define procedures inside other procedures.")
-                ip, proc_name, proc_signature = parse_procedure_signature(code, ip)
-                if proc_name in procedures:
-                    procedure_start: int = procedures[proc_name].start
-                    procedure_token: Instruction = instructions[procedure_start]
-                    print_compiler_error("Procedure redefinition",
-                                         f"{location}: Procedure is already defined here: {procedure_token.loc}")
-                else:
-                    proc_ip = len(instructions) + 1
-                    procedure: Procedure = Procedure(name=proc_name, signature=proc_signature, local_mem=[], mem_size=0,
-                                                     start=proc_ip, end=proc_ip, type_checked=False)
-                    procedures[proc_name] = procedure
-                    inside_proc = True
-                    current_proc = proc_name
+                ip, proc_name, proc_signature = parse_procedure_signature(code, ip, global_memory, constants, procedures)
+
+                proc_ip = len(instructions) + 1
+                procedure: Procedure = Procedure(name=proc_name, signature=proc_signature, local_mem=[], mem_size=0,
+                                                 start=proc_ip, end=proc_ip, type_checked=False)
+                procedures[proc_name] = procedure
+                inside_proc = True
+                current_proc = proc_name
                 info: KeywordParsingInfo = KeywordParsingInfo(len(instructions), token, None)
                 keyword_stack.append(info)
 
                 word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.STR, value=proc_name))
+                op = Instruction(loc=location, word=word)
+            elif name == "const":
+                ip, const_unit = parse_constant_block(code, ip, global_memory, constants, procedures)
+                constants.append(const_unit)
+                word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=const_unit.content.typ, value=const_unit.content.value))
                 op = Instruction(loc=location, word=word)
             elif name == "while" or name == "if":
                 info: KeywordParsingInfo = KeywordParsingInfo(len(instructions), token, None)
@@ -680,6 +759,8 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                         print("[INFO] Including " + include_name)
                     included_files.append(Token(loc=include_token.loc, name=include_name))
                     include_program: Program = parse_source_code(include_name, opt_flags, program_name, included_files)
+                    print(include_program)
+                    exit(1)
                     include_program.name = include_name
                     # print(include_program)
                     # Append all instructions
@@ -728,8 +809,16 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
             op = Instruction(loc=location, word=word)
         elif name.startswith("\"") and name.endswith("\""):
             # print(f"Found string {name}")
+            name = name[1:-1]
+            exists = False
             lbl: str = "str_" + str(PARSE_COUNT) + "_" + str(len(strings))
-            strings.append((lbl, name[1:-1]))
+            for l, s in strings:
+                if s == name:
+                    exists = True
+                    lbl = l
+                    break
+            if not exists:
+                strings.append((lbl, name))
             word = Operation(operation=OpSet.PUSH_STR, operand=DataTuple(typ=Type.STR, value=lbl))
             op = Instruction(loc=location, word=word)
         else:
@@ -748,14 +837,38 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                 op = Instruction(loc=location, word=word)
                 is_proc = True
 
-            if not is_mem and not is_proc:
+            is_const = False
+            for const in constants:
+                if name == const.name:
+                    typ = const.content.typ
+                    value = const.content.value
+                    if typ == Type.INT:
+                        operation = OpSet.PUSH_INT
+                    elif typ == Type.STR:
+                        operation = OpSet.PUSH_STR
+                        exists = False
+                        lbl: str = "str_" + str(PARSE_COUNT) + "_" + str(len(strings))
+                        for l, s in strings:
+                            if s == value:
+                                exists = True
+                                lbl = l
+                                break
+                        if not exists:
+                            strings.append((lbl, value))
+                        value = lbl
+                    else:
+                        assert False, "This might be a bug in parsing const blocks"
+                    word = Operation(operation=operation, operand=DataTuple(typ=typ, value=value))
+                    op = Instruction(loc=location, word=word)
+                    is_const = True
+                    break
+            if not is_mem and not is_proc and not is_const:
                 print_compiler_error("Unknown Token in Parsing",
                                      f"{token} can't be parsed.")
         instructions.append(op)
         ip += 1
 
     for i, op in enumerate(instructions):
-        # print(i, op)
         operation: Operation = op.word.operation
         operand: DataTuple = op.word.operand
         if operation in [Keyword.ELSE, Keyword.DO, Keyword.ELIF]:
@@ -777,8 +890,6 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
 
 
 def type_check_program(instructions: List[Instruction], procedures: dict[str, Procedure]):
-    assert len(OpSet) == 31, "Not all Operations are handled in type checking"
-    assert len(Keyword) == 9, "Not all Keywords are handled in type checking"
     assert len(Type) == 3, "Not all Type are handled in type checking"
     stack: List[Type] = []
     stack_checkpoint: List[tuple] = []
@@ -987,7 +1098,7 @@ def type_check_program(instructions: List[Instruction], procedures: dict[str, Pr
                 assert False, f"Not implemented type checking for {operation} yet"
         elif operation in Keyword:
             # assert False, "Type checking Keyword not refactored yet"
-            if operation == Keyword.MEMORY:
+            if operation == Keyword.MEMORY or operation == Keyword.CONSTANT:
                 pass
             elif operation in [Keyword.WHILE, Keyword.IF]:
                 stack_checkpoint.append((ip, op, stack.copy()))
@@ -1096,8 +1207,6 @@ def type_check_program(instructions: List[Instruction], procedures: dict[str, Pr
                 for t in proc_inputs:
                     stack.append(t)
                 procedure.type_checked = True
-            elif operation == Keyword.ELIF:
-                assert False, "Typechecking elif not implemented"
             else:
                 # print(stack_checkpoint)
                 assert False, f"{operation} type-checking not implemented yet"
@@ -1199,8 +1308,6 @@ def evaluate_static_equations(instructions: List[Instruction]):
 # Link Obj together: golink /no /console /entry main output.obj MSVCRT.dll kernel32.dll
 # Call Program: output.exe
 def compile_program(program: Program, opt_flags: dict):
-    assert len(OpSet) == 31, "Not all OP can be compiled yet"
-    assert len(Keyword) == 9, "Not all Keywords can be compiled yet"
     program_name: str = program.name
     instructions: List[Instruction] = program.instructions
     procedures: dict[str, Procedure] = program.procedures
@@ -1402,7 +1509,7 @@ def compile_program(program: Program, opt_flags: dict):
                 else:
                     assert False, f"Unreachable - This means that an operation can't be compiled yet, namely: {operation}"
             elif operation in Keyword:
-                if operation == Keyword.IF or operation == Keyword.WHILE:
+                if operation == Keyword.IF or operation == Keyword.WHILE or operation == Keyword.CONSTANT:
                     pass
                 elif operation == Keyword.ELSE or operation == Keyword.ELIF:
                     assert op.word.operand.typ == Type.INT, "This could be a bug while parsing."

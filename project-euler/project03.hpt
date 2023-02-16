@@ -1,14 +1,14 @@
-memory n 8 end
-memory factor 8 end
+memory int n end
+memory int factor end
 
-600851475143 n !64
-2 factor !64
+600851475143 n !int
+2 factor !int
 
-while factor ?64 n ?64 1 + < do
-    if n ?64 factor ?64 % 0 == do
-        n ?64 factor ?64 / n !64
-        factor ?64 puti
+while factor ?int n ?int 1 + < do
+    if n ?int factor ?int % 0 == do
+        n ?int factor ?int / n !int
+        factor ?int puti "\n" puts drop
     else
-        factor ?64 1 + factor !64
+        factor ?int 1 + factor !int
     end
 end

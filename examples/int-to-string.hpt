@@ -1,12 +1,13 @@
-memory reverse_buffer 32 end
-memory print_buffer 32 end
+const int buffer_size 32 end
+memory byte reverse_buffer buffer_size end
+memory byte print_buffer buffer_size end
 
-proc int-to-str int -> ptr do
+proc int-to-str int -> int byte-ptr do
   # number 0
   0 while over 0 > do
     swap
-    dup 10 % 48 + # here is the char
-    rot dup reverse_buffer swap ptr+ rot swap !8
+    dup 10 % 48 + # here is the byte
+    rot dup reverse_buffer swap ptr+ rot cast(byte) swap !byte
     swap
     10 /
     swap
@@ -17,15 +18,18 @@ proc int-to-str int -> ptr do
   # len index
   while dup 0 > do
     # len index
-    over over - reverse_buffer swap ptr+ ?8
+    over over - reverse_buffer swap ptr+ ?byte
     # len index
-    over print_buffer swap 1 - ptr+ !8
+    over print_buffer swap 1 - ptr+ !byte
     1 -
   end drop
-  dup print_buffer swap ptr+ 13 swap !8
-  dup 1 + print_buffer swap ptr+ 10 swap !8
-  dup 2 + print_buffer swap ptr+ 0 swap !8
-  drop # drop len
+#  dup print_buffer swap ptr+ 13 swap !byte
+#  dup 1 + print_buffer swap ptr+ 10 swap !byte
+  dup 2 + print_buffer swap ptr+ 0 cast(byte) swap !byte
+  # drop # drop len
   # reverse_buffer puts
   print_buffer
 end
+
+"Expected: " puts drop 1234567 puti "\n" puts drop
+"Procedure: " puts drop 1234567 int-to-str puts drop "\n" puts drop

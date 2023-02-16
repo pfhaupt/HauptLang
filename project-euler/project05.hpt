@@ -1,25 +1,25 @@
-memory n 8 end
-memory done 8 end
-memory up_to 8 end
-memory index 8 end
-memory count 8 end
+memory int n end
+memory int done end
+memory int up_to end
+memory int index end
+memory int count end
 
-1 n !64
-0 done !64
-10 up_to !64
+1 n !int
+0 done !int
+10 up_to !int
 
-while done ?64 0 == do
-    1 index !64
-    1 count !64
-    while index ?64 up_to ?64 < do
-        if n ?64 index ?64 % 0 == do
-            count ?64 1 + count !64
+while done ?int 0 == do
+    1 index !int
+    1 count !int
+    while index ?int up_to ?int < do
+        if n ?int index ?int % 0 == do
+            count ?int 1 + count !int
         end
-        index ?64 1 + index !64
+        index ?int 1 + index !int
     end
-    if count ?64 up_to ?64 == do
-        n ?64 puti
-        1 done !64
+    if count ?int up_to ?int == do
+        n ?int puti "\n" puts drop
+        1 done !int
     end
-    n ?64 1 + n !64
+    n ?int 1 + n !int
 end

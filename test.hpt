@@ -1,13 +1,11 @@
-include "./examples/int-to-string.hpt"
-
-proc fac int -> int do
-  # Calculates n!
-  1 while over 1 > do
-    over *
-    swap 1 -
-    swap
-  end
-  swap drop
-end
-
-10 fac int-to-str puts
+const int string_size 32 end
+memory byte string_content 32 end
+memory int blub end
+memory byte whatever 2 end
+100 blub !int
+101 cast(byte) whatever !byte
+13 cast(byte) whatever 1 ptr+ !byte
+10 cast(byte) whatever 2 ptr+ !byte
+0 cast(byte) whatever 3 ptr+ !byte
+blub ?int puti
+whatever puts

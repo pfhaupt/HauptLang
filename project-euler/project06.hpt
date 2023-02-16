@@ -1,19 +1,19 @@
-memory limit 8 end
-memory number 8 end
-memory sum_square 8 end
-memory sum_number 8 end
+memory int limit end
+memory int number end
+memory int sum_square end
+memory int sum_number end
 
-100 limit !64
-0 number !64
-0 sum_square !64
-0 sum_number !64
+100 limit !int
+0 number !int
+0 sum_square !int
+0 sum_number !int
 
-while number ?64 limit ?64 1 + < do
-    sum_square ?64 number ?64 number ?64 * + sum_square !64
-    sum_number ?64 number ?64 + sum_number !64
-    number ?64 1 + number !64
+while number ?int limit ?int 1 + < do
+    sum_square ?int number ?int number ?int * + sum_square !int
+    sum_number ?int number ?int + sum_number !int
+    number ?int 1 + number !int
 end
-sum_number ?64 sum_number ?64 * sum_number !64
-sum_square ?64 puti
-sum_number ?64 puti
-sum_number ?64 sum_square ?64 - puti
+sum_number ?int sum_number ?int * sum_number !int
+sum_square ?int puti "\n" puts drop
+sum_number ?int puti "\n" puts drop
+sum_number ?int sum_square ?int - puti "\n" puts drop

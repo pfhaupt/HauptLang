@@ -1,15 +1,15 @@
-memory n 8 end
-memory result 8 end
-memory up_to 8 end
+memory int n end
+memory int result end
+memory int up_to end
 
-1 n !64
-1 result !64
-20 up_to !64
+1 n !int
+1 result !int
+20 up_to !int
 
-while n ?64 up_to ?64 < do
-  result ?64 n ?64 * result !64
-  result ?64 puti
-  n ?64 1 + n !64
+while n ?int up_to ?int < do
+  result ?int n ?int * result !int
+  result ?int puti "\n" puts drop
+  n ?int 1 + n !int
 end
 
 proc fac int -> int do
@@ -22,4 +22,4 @@ proc fac int -> int do
   swap drop
 end
 
-10 fac puti
+10 fac puti "\n" puts drop

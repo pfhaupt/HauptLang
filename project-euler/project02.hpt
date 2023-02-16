@@ -1,20 +1,20 @@
-memory result 8 end
-memory a 8 end
-memory b 8 end
-memory fib 8 end
+memory int result end
+memory int a end
+memory int b end
+memory int fib end
 
-0 result !64
-1 a !64
-0 b !64
-1 fib !64
+0 result !int
+1 a !int
+0 b !int
+1 fib !int
 
-while fib ?64 4000000 < do
-    a ?64 b ?64 + fib !64
-    b ?64 a !64
-    fib ?64 b !64
-    if fib ?64 2 % 0 == do
-        result ?64 fib ?64 + result !64
+while fib ?int 4000000 < do
+    a ?int b ?int + fib !int
+    b ?int a !int
+    fib ?int b !int
+    if fib ?int 2 % 0 == do
+        result ?int fib ?int + result !int
     end
 end
 
-result ?64 puti
+result ?int puti "\n" puts drop

@@ -1,19 +1,19 @@
-memory a 8 end
-memory b 8 end
-memory fib 8 end
-memory n 8 end
-memory up_to 8 end
+memory int a end
+memory int b end
+memory int fib end
+memory int n end
+memory int up_to end
 
-1 a !64
-0 b !64
-1 fib !64
-0 n !64
-20 up_to !64
+1 a !int
+0 b !int
+1 fib !int
+0 n !int
+20 up_to !int
 
-while n ?64 up_to ?64 < do
-  a ?64 b ?64 + fib !64
-  b ?64 a !64
-  fib ?64 b !64
-  fib ?64 puti
-  n ?64 1 + n !64
+while n ?int up_to ?int < do
+  a ?int b ?int + fib !int
+  b ?int a !int
+  fib ?int b !int
+  fib ?int puti "\n" puts drop
+  n ?int 1 + n !int
 end

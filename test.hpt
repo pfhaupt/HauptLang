@@ -1,4 +1,3 @@
 const str new_line "\n" end
-const int blub 12 end
-
-blub blub * puti
+const int N 100 end
+N puti new_line puts

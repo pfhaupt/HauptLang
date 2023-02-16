@@ -532,15 +532,84 @@ def parse_constant_block(code: List[Token], ip: int, global_memory: List[Memory]
 
     const_location: Location = name_token.loc
     const_name: str = name_name
-    ip += 1
-    value_token: Token = code[ip]
-    value_name: str = value_token.name
+
     if const_type == Type.INT:
-        if not value_name.isdigit():
-            print_compiler_error("Invalid value for `const` definition",
-                                 f"{value_token.loc}: Expected number, found `{value_name}`")
-        const_value: int = int(value_name)
+        stack = []
+        ip += 1
+        next_token: Token = code[ip]
+        while next_token.name != "end":
+            name: str = next_token.name
+            if (name.startswith("-") and name[1:].isdigit()) or name.isdigit():
+                stack.append(DataTuple(typ=Type.INT, value=int(next_token.name)))
+            elif name == "+":
+                if len(stack) < 2:
+                    print_compiler_error("Not enough operands for `const` evaluation",
+                                         f"{next_token.loc}: `{next_token.name}` expected 2 operands.")
+                op2 = stack.pop()
+                op1 = stack.pop()
+                stack.append(DataTuple(typ=Type.INT, value=op1.value + op2.value))
+            elif name == "-":
+                if len(stack) < 2:
+                    print_compiler_error("Not enough operands for `const` evaluation",
+                                         f"{next_token.loc}: `{next_token.name}` expected 2 operands.")
+                op2 = stack.pop()
+                op1 = stack.pop()
+                stack.append(DataTuple(typ=Type.INT, value=op1.value - op2.value))
+            elif name == "*":
+                if len(stack) < 2:
+                    print_compiler_error("Not enough operands for `const` evaluation",
+                                         f"{next_token.loc}: `{next_token.name}` expected 2 operands.")
+                op2 = stack.pop()
+                op1 = stack.pop()
+                stack.append(DataTuple(typ=Type.INT, value=op1.value * op2.value))
+            elif name == "/":
+                if len(stack) < 2:
+                    print_compiler_error("Not enough operands for `const` evaluation",
+                                         f"{next_token.loc}: `{next_token.name}` expected 2 operands.")
+                op2 = stack.pop()
+                op1 = stack.pop()
+                if op2.value == 0:
+                    print_compiler_error("Division by Zero in `const` evaluation",
+                                         f"{next_token.loc}: Second operand was Zero.")
+                stack.append(DataTuple(typ=Type.INT, value=int(op1.value / op2.value)))
+            elif name == "%":
+                if len(stack) < 2:
+                    print_compiler_error("Not enough operands for `const` evaluation",
+                                         f"{next_token.loc}: `{next_token.name}` expected 2 operands.")
+                op2 = stack.pop()
+                op1 = stack.pop()
+                stack.append(DataTuple(typ=Type.INT, value=op1.value % op2.value))
+            else:
+                is_const = False
+                for const in constants:
+                    if name == const.name:
+                        stack.append(const.content)
+                        is_const = True
+                        break
+                if not is_const:
+                    print_compiler_error("Undefined token in `const` evaluation",
+                                         f"{next_token.loc}: `{next_token.name} can't be evaluated in `const`-blocks.")
+
+            ip += 1
+            if ip >= len(code):
+                print_compiler_error("Could not find matching `end` for `const` block.",
+                                     f"{next_token.loc}: Expected `end` keyword, reached end of file.")
+            next_token: Token = code[ip]
+        if len(stack) > 1:
+            print_compiler_error("Too many elements in the stack after `const` evaluation",
+                                 f"{next_token.loc}: Expected to have a single element on the stack, got {len(stack)}:\n"
+                                 f"{stack}")
+        elif len(stack) == 0:
+            print_compiler_error("Not enough elements in the stack after `const` evaluation",
+                                 f"{next_token.loc}: Expected to have a single element on the stack, got {len(stack)}:\n"
+                                 f"{stack}")
+        value = stack.pop().value
+        const_value: int = value
+        ip -= 1
     elif const_type == Type.STR:
+        ip += 1
+        value_token: Token = code[ip]
+        value_name: str = value_token.name
         if not (value_name.startswith("\"") and value_name.endswith("\"")):
             print_compiler_error("Invalid value for `const` definition",
                                  f"{value_token.loc}: Expected string, found `{value_name}`")

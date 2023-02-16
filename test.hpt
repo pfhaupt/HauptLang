@@ -1,3 +1,11 @@
-memory str n end
-
-n ?int puti
+const int string_size 32 end
+memory byte string_content 32 end
+memory int blub end
+memory byte whatever 2 end
+100 blub !int
+101 cast(byte) whatever !byte
+13 cast(byte) whatever 1 ptr+ !byte
+10 cast(byte) whatever 2 ptr+ !byte
+0 cast(byte) whatever 3 ptr+ !byte
+blub ?int puti
+whatever puts

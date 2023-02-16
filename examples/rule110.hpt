@@ -1,15 +1,13 @@
-memory len 8 end
-memory buffer 32 end
-memory next_buffer 32 end
+const int len 32 end
+memory byte buffer len end
+memory byte next_buffer len end
 
-32 len !64
-
-1 len ?64 1 - buffer swap ptr+ !8
+1 cast(byte) len 1 - buffer swap ptr+ !byte
 
 proc display-buffer do
-  0 while dup len ?64 < do
-    dup buffer swap ptr+ ?8
-    if dup 1 == do
+  0 while dup len < do
+    dup buffer swap ptr+ ?byte
+    if dup cast(int) 1 == do
       "*" puts drop
     else
       " " puts drop
@@ -20,39 +18,39 @@ proc display-buffer do
 end
 
 proc calculate-step do
-  1 while dup len ?64 1 - < do
-    dup 1 - buffer swap ptr+ ?8  4 *
-    over buffer swap ptr+ ?8     2 * +
-    over 1 + buffer swap ptr+ ?8 1 * +
+  1 while dup len 1 - < do
+    dup 1 - buffer swap ptr+ ?byte  cast(int) 4 *
+    over buffer swap ptr+ ?byte     cast(int) 2 * +
+    over 1 + buffer swap ptr+ ?byte cast(int) 1 * +
     if dup 0 == do
-      swap dup next_buffer swap ptr+ 0 swap !8
+      swap dup next_buffer swap ptr+ 0 cast(byte) swap !byte
     elif dup 1 == do
-      swap dup next_buffer swap ptr+ 1 swap !8
+      swap dup next_buffer swap ptr+ 1 cast(byte) swap !byte
     elif dup 2 == do
-      swap dup next_buffer swap ptr+ 1 swap !8
+      swap dup next_buffer swap ptr+ 1 cast(byte) swap !byte
     elif dup 3 == do
-      swap dup next_buffer swap ptr+ 1 swap !8
+      swap dup next_buffer swap ptr+ 1 cast(byte) swap !byte
     elif dup 4 == do
-      swap dup next_buffer swap ptr+ 0 swap !8
+      swap dup next_buffer swap ptr+ 0 cast(byte) swap !byte
     elif dup 5 == do
-      swap dup next_buffer swap ptr+ 1 swap !8
+      swap dup next_buffer swap ptr+ 1 cast(byte) swap !byte
     elif dup 6 == do
-      swap dup next_buffer swap ptr+ 1 swap !8
+      swap dup next_buffer swap ptr+ 1 cast(byte) swap !byte
     elif dup 7 == do
-      swap dup next_buffer swap ptr+ 0 swap !8
+      swap dup next_buffer swap ptr+ 0 cast(byte) swap !byte
     end
     swap drop
     1 +
   end drop
 
   # copy next_buffer into buffer
-  0 while dup len ?64 < do
-    dup dup next_buffer swap ptr+ ?8 buffer rot ptr+ !8
+  0 while dup len < do
+    dup dup next_buffer swap ptr+ ?byte buffer rot ptr+ !byte
     1 +
   end drop
 end
 
-0 while dup len ?64 < do
+0 while dup len < do
   calculate-step
   display-buffer
   1 +

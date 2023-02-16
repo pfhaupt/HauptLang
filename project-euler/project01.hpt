@@ -1,20 +1,20 @@
-memory result 8 end
-memory limit 8 end
-memory index 8 end
+memory int result end
+memory int limit end
+memory int index end
 
-0 result !64
-1000 limit !64
-0 index !64
+0 result !int
+1000 limit !int
+0 index !int
 
-while index ?64 limit ?64 < do
-    if index ?64 3 % 0 == do
-        result ?64 index ?64 + result !64
+while index ?int limit ?int < do
+    if index ?int 3 % 0 == do
+        result ?int index ?int + result !int
     else
-        if index ?64 5 % 0 == do
-            result ?64 index ?64 + result !64
+        if index ?int 5 % 0 == do
+            result ?int index ?int + result !int
         end
     end
-    index ?64 1 + index !64
+    index ?int 1 + index !int
 end
 
-result ?64 puti "\n" puts drop
+result ?int puti "\n" puts drop

@@ -14,6 +14,6 @@ while number ?64 limit ?64 1 + < do
     number ?64 1 + number !64
 end
 sum_number ?64 sum_number ?64 * sum_number !64
-sum_square ?64 puti
-sum_number ?64 puti
-sum_number ?64 sum_square ?64 - puti
+sum_square ?64 puti "\n" puts
+sum_number ?64 puti "\n" puts
+sum_number ?64 sum_square ?64 - puti "\n" puts

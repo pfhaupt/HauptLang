@@ -37,4 +37,4 @@ while running ?64 do
     end
 end
 
-result ?64 puti
+result ?64 puti "\n" puts

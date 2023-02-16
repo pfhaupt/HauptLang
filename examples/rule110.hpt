@@ -26,34 +26,20 @@ proc calculate-step do
     over 1 + buffer swap ptr+ ?8 1 * +
     if dup 0 == do
       swap dup next_buffer swap ptr+ 0 swap !8
-    else
-      if dup 1 == do
-        swap dup next_buffer swap ptr+ 1 swap !8
-      else
-        if dup 2 == do
-          swap dup next_buffer swap ptr+ 1 swap !8
-        else
-          if dup 3 == do
-            swap dup next_buffer swap ptr+ 1 swap !8
-          else
-            if dup 4 == do
-              swap dup next_buffer swap ptr+ 0 swap !8
-            else
-              if dup 5 == do
-                swap dup next_buffer swap ptr+ 1 swap !8
-              else
-                if dup 6 == do
-                  swap dup next_buffer swap ptr+ 1 swap !8
-                else
-                  if dup 7 == do
-                    swap dup next_buffer swap ptr+ 0 swap !8
-                  end
-                end
-              end
-            end
-          end
-        end
-      end
+    elif dup 1 == do
+      swap dup next_buffer swap ptr+ 1 swap !8
+    elif dup 2 == do
+      swap dup next_buffer swap ptr+ 1 swap !8
+    elif dup 3 == do
+      swap dup next_buffer swap ptr+ 1 swap !8
+    elif dup 4 == do
+      swap dup next_buffer swap ptr+ 0 swap !8
+    elif dup 5 == do
+      swap dup next_buffer swap ptr+ 1 swap !8
+    elif dup 6 == do
+      swap dup next_buffer swap ptr+ 1 swap !8
+    elif dup 7 == do
+      swap dup next_buffer swap ptr+ 0 swap !8
     end
     swap drop
     1 +

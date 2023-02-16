@@ -22,10 +22,13 @@ proc int-to-str int -> ptr do
     over print_buffer swap 1 - ptr+ !8
     1 -
   end drop
-  dup print_buffer swap ptr+ 13 swap !8
-  dup 1 + print_buffer swap ptr+ 10 swap !8
+#  dup print_buffer swap ptr+ 13 swap !8
+#  dup 1 + print_buffer swap ptr+ 10 swap !8
   dup 2 + print_buffer swap ptr+ 0 swap !8
   drop # drop len
   # reverse_buffer puts
   print_buffer
 end
+
+"Expected: " puts 1234567 puti "\n" puts
+"Procedure: " puts 1234567 int-to-str puts "\n" puts

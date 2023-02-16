@@ -139,6 +139,7 @@ INTRINSIC_LOOKUP: dict[str, OpSet] = {
 class Keyword(Enum):
     IF = auto()
     ELSE = auto()
+    ELIF = auto()
     DO = auto()
     END = auto()
     WHILE = auto()
@@ -150,6 +151,7 @@ class Keyword(Enum):
 KEYWORD_LOOKUP: dict[str, Keyword] = {
     "if": Keyword.IF,
     "else": Keyword.ELSE,
+    "elif": Keyword.ELIF,
     "do": Keyword.DO,
     "end": Keyword.END,
     "while": Keyword.WHILE,
@@ -259,6 +261,18 @@ class Program:
 class ErrorType(Enum):
     NORMAL = auto()
     STACK = auto()
+
+
+@dataclass
+class KeywordParsingInfo:
+    ip: int
+    info: Token
+    pre_info = None
+
+    def __init__(self, i: int, inf: Token, pre=None):
+        self.ip = i
+        self.info = inf
+        self.pre_info = pre  # always typeof KeywordParsingInfo
 
 
 def print_compiler_error(err, info="", error_type=ErrorType.NORMAL):
@@ -473,12 +487,13 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
     procedures: dict[str, Procedure] = {}
     strings: List[tuple] = []
     instructions: List[Instruction] = []
-    keyword_stack: List[tuple] = []
     jump_labels: List[DataTuple] = []
     included_files: List[Token] = pre_included_files
 
     inside_proc: bool = False
     current_proc: str = ""
+
+    keyword_stack: List[KeywordParsingInfo] = []
 
     ip = 0
     while ip < len(code):
@@ -526,67 +541,74 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                     procedures[proc_name] = procedure
                     inside_proc = True
                     current_proc = proc_name
-                keyword_stack.append((len(instructions), token))
+                info: KeywordParsingInfo = KeywordParsingInfo(len(instructions), token, None)
+                keyword_stack.append(info)
 
                 word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.STR, value=proc_name))
                 op = Instruction(loc=location, word=word)
             elif name == "while" or name == "if":
-                keyword_stack.append((len(instructions), token))
+                info: KeywordParsingInfo = KeywordParsingInfo(len(instructions), token, None)
+                keyword_stack.append(info)
 
                 word = Operation(operation=KEYWORD_LOOKUP[name], operand=None)
                 op = Instruction(loc=location, word=word)
             elif name == "do":
                 if len(keyword_stack) < 1:
                     print_compiler_error("Lonely DO found.",
-                                         f"{location}: Could not find matching if, while or proc before this `do`.")
-                pre_do: tuple = keyword_stack.pop()
-                pre_do_ip: int = pre_do[0]
-                pre_do_keyword: Token = pre_do[1]
-                if pre_do_keyword.name == "while" or pre_do_keyword.name == "if":
+                                         f"{location}: Could not find matching if, elif, while or proc before this `do`.")
+                pre_do: KeywordParsingInfo = keyword_stack.pop()
+                pre_do_ip: int = pre_do.ip
+                pre_do_keyword: Token = pre_do.info
+                if pre_do_keyword.name == "while" or pre_do_keyword.name == "if" or pre_do_keyword.name == "elif":
                     word = Operation(operation=KEYWORD_LOOKUP[name], operand=None)
-                    keyword_stack.append(((len(instructions), token), pre_do))
+                    info: KeywordParsingInfo = KeywordParsingInfo(len(instructions), token, pre_do)
+                    keyword_stack.append(info)
                 elif pre_do_keyword.name == "proc":
                     word = Operation(operation=OpSet.PREP_PROC, operand=DataTuple(typ=Type.STR, value=current_proc))
-                    keyword_stack.append(((len(instructions), token), pre_do))
+                    info: KeywordParsingInfo = KeywordParsingInfo(len(instructions), token, pre_do)
+                    keyword_stack.append(info)
                 else:
                     word = None
                     print_compiler_error("Unexpected keyword in parsing",
-                                         f"{pre_do_keyword.loc}: Expected to be while, if or proc.\n"
+                                         f"{pre_do_keyword.loc}: Expected to be while, if, elif or proc.\n"
                                          f"Found: {pre_do_keyword.name}")
 
                 op = Instruction(loc=location, word=word)
-            elif name == "else":
+            elif name == "else" or name == "elif":
                 if len(keyword_stack) < 1:
                     print_compiler_error("Lonely ELSE found.",
                                          f"{location}: Could not find matching `do` before this `else`.")
-                pre_else: tuple = keyword_stack.pop()
-                pre_else_tuple: tuple = pre_else[0]
-                pre_else_ip: int = pre_else_tuple[0]
-                pre_do_tuple: tuple = pre_else[1]
-                pre_do_ip: int = pre_do_tuple[0]
-                pre_do_token: Token = pre_do_tuple[1]
-                if pre_do_token.name != "if":
+                pre_else: KeywordParsingInfo = keyword_stack.pop()
+                pre_else_ip: int = pre_else.ip
+                pre_do: KeywordParsingInfo = pre_else.pre_info
+                assert pre_do is not None, "Uhh"
+                pre_do_ip: int = pre_do.ip
+                pre_do_token: Token = pre_do.info
+                instructions[pre_else_ip].word.operand = DataTuple(typ=Type.INT, value=len(instructions) - pre_else_ip)
+                if pre_do_token.name == "if":
+                    pass
+                elif pre_do_token.name == "elif":
+                    instructions[pre_do_ip].word.operand = DataTuple(typ=Type.INT, value=len(instructions) - pre_do_ip - 1)
+                else:
                     print_compiler_error("Unexpected keyword in parsing",
                                          f"{instructions[pre_do_ip].loc}: Expected to be if.\n"
                                          f"Found: {instructions[pre_do_ip].word}")
-                instructions[pre_else_ip].word.operand = DataTuple(typ=Type.INT, value=len(instructions) - pre_else_ip)
                 word = Operation(operation=KEYWORD_LOOKUP[name], operand=None)
                 op = Instruction(loc=location, word=word)
-                keyword_stack.append(((len(instructions), token), pre_else_tuple))
+                info: KeywordParsingInfo = KeywordParsingInfo(len(instructions), token, pre_else)
+                keyword_stack.append(info)
             elif name == "end":
                 if len(keyword_stack) < 1:
                     print_compiler_error("Lonely END found.",
                                          f"{location}: Could not find matching `do` before this `end`.")
-                pre_end: tuple = keyword_stack.pop()
-                pre_end_tuple: tuple = pre_end[0]
-                pre_end_ip: int = pre_end_tuple[0]
-                pre_end_token: Token = pre_end_tuple[1]
-                # pre_end_keyword: Token = pre_end[1]
+                pre_end: KeywordParsingInfo = keyword_stack.pop()
+                pre_end_ip: int = pre_end.ip
+                pre_end_token: Token = pre_end.info
                 pre_end_operation: Keyword = instructions[pre_end_ip].word.operation
-                pre_do_tuple: tuple = pre_end[1]
-                pre_do_ip: int = pre_do_tuple[0]
-                pre_do_token: Token = pre_do_tuple[1]
-                # pre_do_keyword: Token = pre_do[1]
+                pre_do: KeywordParsingInfo = pre_end.pre_info
+                assert pre_do is not None, "Uhh"
+                pre_do_ip: int = pre_do.ip
+                pre_do_token: Token = pre_do.info
                 pre_do_operation: Keyword = instructions[pre_do_ip].word.operation
 
                 assert pre_end_operation == OpSet.PREP_PROC or pre_end_operation == Keyword.DO or pre_end_operation == Keyword.ELSE, "This might be a bug in the parsing step"
@@ -603,6 +625,11 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                     if pre_do_operation == Keyword.IF:
                         word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.INT, value=1))
                         op = Instruction(loc=location, word=word)
+                    elif pre_do_operation == Keyword.ELIF:
+                        word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.INT, value=1))
+                        op = Instruction(loc=location, word=word)
+                        instructions[pre_do_ip].word.operand = DataTuple(typ=Type.INT,
+                                                                         value=len(instructions) - pre_do_ip)
                     elif pre_do_operation == Keyword.WHILE:
                         word = Operation(operation=KEYWORD_LOOKUP[name],
                                          operand=DataTuple(typ=Type.INT, value=pre_do_ip - len(instructions)))
@@ -731,7 +758,7 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
         # print(i, op)
         operation: Operation = op.word.operation
         operand: DataTuple = op.word.operand
-        if operation in [Keyword.ELSE, Keyword.DO]:
+        if operation in [Keyword.ELSE, Keyword.DO, Keyword.ELIF]:
             jump_labels.append(DataTuple(typ=Type.INT, value=operand.value + i + 1))
         elif operation == Keyword.END:
             if operand.value != 1:
@@ -751,7 +778,7 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
 
 def type_check_program(instructions: List[Instruction], procedures: dict[str, Procedure]):
     assert len(OpSet) == 31, "Not all Operations are handled in type checking"
-    assert len(Keyword) == 8, "Not all Keywords are handled in type checking"
+    assert len(Keyword) == 9, "Not all Keywords are handled in type checking"
     assert len(Type) == 3, "Not all Type are handled in type checking"
     stack: List[Type] = []
     stack_checkpoint: List[tuple] = []
@@ -969,7 +996,7 @@ def type_check_program(instructions: List[Instruction], procedures: dict[str, Pr
                 pre_do = keyword_stack.pop()
                 pre_do_ip = pre_do[0]
                 pre_do_keyword = pre_do[1]
-                if pre_do_keyword in [Keyword.WHILE, Keyword.IF]:
+                if pre_do_keyword in [Keyword.WHILE, Keyword.IF, Keyword.ELIF]:
                     if len(stack) < 1:
                         print_compiler_error("Not enough operands for operation",
                                              f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}")
@@ -986,9 +1013,43 @@ def type_check_program(instructions: List[Instruction], procedures: dict[str, Pr
                 block_instr: Instruction = block[1]
                 block_keyword: Operation = block_instr.word.operation
                 block_stack = block[2]
-                assert block_keyword == Keyword.IF, "This might be a bug in parsing"
-                stack_checkpoint.append((ip, op, stack.copy(), block_instr, block_stack.copy()))
-                stack = block_stack.copy()
+                assert block_keyword == Keyword.IF or block_keyword == Keyword.ELIF, "This might be a bug in parsing"
+                if block_keyword == Keyword.IF:
+                    stack_checkpoint.append((ip, op, stack.copy(), block_instr, block_stack.copy()))
+                    stack = block_stack.copy()
+                elif block_keyword == Keyword.ELIF:
+                    new_stack = block[4]
+                    stack_checkpoint.append((ip, op, stack.copy(), block_instr, block_stack.copy()))
+                    stack = new_stack.copy()
+            elif operation == Keyword.ELIF:
+                block: tuple = stack_checkpoint.pop()
+                block_instr: Instruction = block[1]
+                block_stack = block[2]
+                block_keyword: Keyword = block_instr.word.operation
+                if block_keyword == Keyword.IF:
+                    stack_checkpoint.append((ip, op, stack.copy(), block_instr, block_stack.copy()))
+                    stack = block_stack.copy()
+                    keyword_stack.append((ip, operation))
+                elif block_keyword == Keyword.ELIF:
+                    if len(stack) != len(block_stack):
+                        print_compiler_error("Stack modification error in type checking",
+                                             f"{location}: The branch before this `elif` does not match the expected stack.\n"
+                                             f"\tExpected stack: {block_stack}\n"
+                                             f"\tActual stack: {stack}")
+                    else:
+                        for i in range(len(stack)):
+                            if stack[i] != block_stack[i]:
+                                print_compiler_error("Stack modification error in type checking",
+                                                     f"{block_instr.loc}: The branch before this `elif` does not match the expected stack.\n"
+                                                     f"\tExpected stack: {block_stack}\n"
+                                                     f"\tActual stack:   {stack}")
+                    new_stack = block[4]
+                    stack_checkpoint.append((ip, op, stack.copy(), block_instr, new_stack.copy()))
+                    stack = new_stack.copy()
+                    keyword_stack.append((ip, operation))
+
+                else:
+                    assert False, f"This might be a bug in parsing, Unexpected keyword: {block_keyword} in type-checking ELIF"
             elif operation == Keyword.END:
                 block: tuple = stack_checkpoint.pop()
                 # block_ip = block[0]
@@ -1009,21 +1070,21 @@ def type_check_program(instructions: List[Instruction], procedures: dict[str, Pr
                                                      f"{block_instr.loc}: `{block_keyword.name}` is not allowed to modify the types on the stack.\n"
                                                      f"Before: {block_stack}\n"
                                                      f"After: {stack}")
-                elif block_keyword == Keyword.IF or block_keyword == Keyword.ELSE:
+                elif block_keyword == Keyword.IF or block_keyword == Keyword.ELSE or block_keyword == Keyword.ELIF:
                     len1 = len(block_stack)
                     len2 = len(stack)
-                    if not (len1 == len2):
+                    if len1 != len2:
                         print_compiler_error("Stack modification error in type checking",
-                                             f"{block_instr.loc}: All `if`-branches must result in the same stack.\n"
-                                             f"\tStack before `if` : {block_stack}\n"
-                                             f"\tStack before `end`: {stack}")
+                                             f"{location}: The branch before this `end` does not match the expected stack.\n"
+                                             f"\tExpected stack: {block_stack}\n"
+                                             f"\tActual stack:   {stack}")
                     else:
                         for i in range(len1):
                             if not (stack[i] == block_stack[i]):
                                 print_compiler_error("Stack modification error in type checking",
-                                                     f"{block_instr.loc}: All `if`-branches must result in the same stack.\n"
-                                                     f"\tStack before `if` : {block_stack}\n"
-                                                     f"\tStack before `end`: {stack}")
+                                                     f"{location}: The branch before this `end` does not match the expected stack.\n"
+                                                     f"\tExpected stack: {block_stack}\n"
+                                                     f"\tActual stack:   {stack}")
                 else:
                     assert False, f"{block_keyword} not implemented yet in type-checking Keyword.END"
             elif operation == Keyword.PROC:
@@ -1035,6 +1096,8 @@ def type_check_program(instructions: List[Instruction], procedures: dict[str, Pr
                 for t in proc_inputs:
                     stack.append(t)
                 procedure.type_checked = True
+            elif operation == Keyword.ELIF:
+                assert False, "Typechecking elif not implemented"
             else:
                 # print(stack_checkpoint)
                 assert False, f"{operation} type-checking not implemented yet"
@@ -1050,7 +1113,10 @@ def type_check_program(instructions: List[Instruction], procedures: dict[str, Pr
                              ErrorType.STACK)
 
 
+# noinspection PyUnreachableCode
 def evaluate_static_equations(instructions: List[Instruction]):
+    # TODO: Optimizing anything inside here breaks jump-labels
+    return instructions
     # optimizes instructions like "10 2 1 3 * 4 5 * + - 2 * 7 - + 5 * 15"
     # by evaluating them in the pre-compiler phase and only pushing the result
     assert len(OpSet) == 31, "Make sure that `stack_op` in" \
@@ -1134,7 +1200,7 @@ def evaluate_static_equations(instructions: List[Instruction]):
 # Call Program: output.exe
 def compile_program(program: Program, opt_flags: dict):
     assert len(OpSet) == 31, "Not all OP can be compiled yet"
-    assert len(Keyword) == 8, "Not all Keywords can be compiled yet"
+    assert len(Keyword) == 9, "Not all Keywords can be compiled yet"
     program_name: str = program.name
     instructions: List[Instruction] = program.instructions
     procedures: dict[str, Procedure] = program.procedures
@@ -1338,7 +1404,7 @@ def compile_program(program: Program, opt_flags: dict):
             elif operation in Keyword:
                 if operation == Keyword.IF or operation == Keyword.WHILE:
                     pass
-                elif operation == Keyword.ELSE:
+                elif operation == Keyword.ELSE or operation == Keyword.ELIF:
                     assert op.word.operand.typ == Type.INT, "This could be a bug while parsing."
                     end_goal = i + op.word.operand.value + 1
                     output.write(f"  jmp {label_name}_{end_goal}\n")
@@ -1358,6 +1424,8 @@ def compile_program(program: Program, opt_flags: dict):
                 elif operation == Keyword.PROC:
                     proc = procedures[operand.value]
                     output.write(f"  jmp {label_name}_{proc.end + 1}\n")
+                elif operation == Keyword.ELIF:
+                    assert False, "Compiling elif not implemented"
                 else:
                     assert False, f"Unreachable - This means that a keyword can't be compiled yet, namely: {operation}"
             else:
@@ -1369,7 +1437,7 @@ def compile_program(program: Program, opt_flags: dict):
         output.write("  call ExitProcess\n")
         output.write("\n")
         output.write("segment .data\n")
-        output.write("  format_string db \"%lld\", 0xd, 0xa, 0\n")
+        output.write("  format_string db \"%lld\", 0\n")
         output.write("  true db 1\n"
                      "  false db 0\n")
         for label, value in strings:

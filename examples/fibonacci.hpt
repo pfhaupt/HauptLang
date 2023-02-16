@@ -14,6 +14,6 @@ while n ?64 up_to ?64 < do
   a ?64 b ?64 + fib !64
   b ?64 a !64
   fib ?64 b !64
-  fib ?64 puti
+  fib ?64 puti "\n" puts
   n ?64 1 + n !64
 end

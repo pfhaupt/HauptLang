@@ -1,13 +1,32 @@
-include "./examples/int-to-string.hpt"
-
-proc fac int -> int do
-  # Calculates n!
-  1 while over 1 > do
-    over *
-    swap 1 -
-    swap
-  end
-  swap drop
-end
-
-10 fac int-to-str puts
+#1
+#if dup 1 == do
+#  1 puti "\n" puts
+#  "HELLO"
+#elif dup 2 == do
+#  2 puti "\n" puts
+#  "HELLO"
+#elif dup 3 == do
+#  3 puti "\n" puts
+#  "HELLO"
+#elif dup 4 == do
+#  4 puti "\n" puts
+#  "HELLO"
+#else
+#  0 puti "\n" puts
+#  "HELLO"
+#end
+#puts "\n" puts
+#if dup 1 == do
+#  1 puti "\n" puts
+#elif dup 2 == do
+#  2 puti "\n" puts
+#end
+#
+#if 1 do
+#else
+#end
+#
+#if 1 do
+#
+#end
+#puti "\n" puts

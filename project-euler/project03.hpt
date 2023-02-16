@@ -7,7 +7,7 @@ memory factor 8 end
 while factor ?64 n ?64 1 + < do
     if n ?64 factor ?64 % 0 == do
         n ?64 factor ?64 / n !64
-        factor ?64 puti
+        factor ?64 puti "\n" puts
     else
         factor ?64 1 + factor !64
     end

@@ -1,3 +1,3 @@
-const str new_line "\n" end
-const int N 100 end
-N puti new_line puts
+memory str n end
+
+n ?int puti

@@ -17,4 +17,4 @@ while fib ?64 4000000 < do
     end
 end
 
-result ?64 puti "\n" puts
+result ?64 puti "\n" puts drop

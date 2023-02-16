@@ -10,13 +10,13 @@ proc display-buffer do
   0 while dup len ?64 < do
     dup buffer swap ptr+ ?8
     if dup 1 == do
-      "*" puts
+      "*" puts drop
     else
-      " " puts
+      " " puts drop
     end drop
     1 +
   end drop
-  "\n" puts
+  "\n" puts drop
 end
 
 proc calculate-step do

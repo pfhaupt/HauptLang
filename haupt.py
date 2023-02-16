@@ -18,13 +18,13 @@ PARSE_COUNT = -1
 class Type(Enum):
     INT = auto()
     PTR = auto()
-    STR = auto()
+    CHAR = auto()
 
 
 assert len(Type) == 3, "Not all Types are in the lookup table yet!"
 TYPES_LOOKUP: dict[str, Type] = {
     "int": Type.INT,
-    "str": Type.STR,
+    "char": Type.CHAR,
     "ptr": Type.PTR,
 }
 
@@ -317,20 +317,23 @@ def check_string(s):
 
 def check_name_availability(variable: Token, code: List[Token], constants: List[Constant], global_memory: List[Memory], procedures: dict[str, Procedure]):
     variable_name: str = variable.name
+    if variable_name in TYPES_LOOKUP or variable_name in KEYWORD_LOOKUP or variable_name in INTRINSIC_LOOKUP:
+        print_compiler_error("Name conflict.",
+                             f"{variable.loc}: `{variable_name}` is a reserved keyword.")
     for mem in global_memory:
         if variable_name == mem.name:
             print_compiler_error("Name conflict.",
-                                 f"{variable.loc}: {variable_name} is already defined here:\n"
+                                 f"{variable.loc}: `{variable_name}` is already defined here:\n"
                                  f"  {mem.loc} with a size of {mem.size} bytes.")
     for const in constants:
         if variable_name == const.name:
             print_compiler_error("Name conflict.",
-                                 f"{variable.loc}: {variable_name} is already defined here: {const.location}")
+                                 f"{variable.loc}: `{variable_name}` is already defined here: {const.location}")
     for proc in procedures:
         if variable_name == proc:
             loc: Location = code[procedures[proc].start].loc
             print_compiler_error("Name conflict.",
-                                 f"{variable.loc}: {variable_name} is already defined here: {loc}")
+                                 f"{variable.loc}: `{variable_name}` is already defined here: {loc}")
 
 
 def get_lines(lines: List):
@@ -392,8 +395,7 @@ def load_from_file(file_path: str):
 
 
 def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory], constants: List[Constant], procedures: dict[str, Procedure]):
-    # Syntax: memory variable byte_count end
-    if len(code) - ip < 4:
+   if len(code) - ip < 4:
         # we need 4 words for each block
         # ip points at number 1
         print_compiler_error("Not enough words for memory block")
@@ -434,8 +436,25 @@ def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory], 
                              f"{byte_count.loc}: Memory size is expected to be greater than 0.\n"
                              f"Found: {byte_string}")
     else:
-        print_compiler_error("Invalid size inside memory",
-                             f"{byte_count.loc}: Memory size is expected to be a number.\n"
+        is_const = False
+        for const in constants:
+            if byte_string == const.name:
+                if const.content.typ != Type.INT:
+                    print_compiler_error("Wrong type for constant memory size",
+                                         f"{byte_count.loc}: Expected type integer, got {const.content.typ}")
+                size: int = int(const.content.value)
+                is_const = True
+                break
+        if is_const:
+            if size == 0:
+                print_compiler_error("Invalid size inside memory",
+                                     f"{byte_count.loc}: Memory size is expected to be greater than 0.\n"
+                                     f"Found: {byte_string}")
+            else:
+                pass
+        else:
+            print_compiler_error("Invalid size inside memory",
+                                 f"{byte_count.loc}: Memory size is expected to be a number.\n"
                              f"Found: {byte_string}")
     ip += 1
     end_token: Token = code[ip]
@@ -520,6 +539,7 @@ def parse_constant_block(code: List[Token], ip: int, global_memory: List[Memory]
     ip += 1
     name_token: Token = code[ip]
     name_name: str = name_token.name
+    check_name_availability(name_token, code, constants, global_memory, procedures)
     if not check_string(name_name):
         if not name_name[0].isalpha() and name_name[0] != "_":
             error_descr = f"{name_token.loc}: The name is only allowed to start with a letter or underscore\n" \
@@ -606,14 +626,14 @@ def parse_constant_block(code: List[Token], ip: int, global_memory: List[Memory]
         value = stack.pop().value
         const_value: int = value
         ip -= 1
-    elif const_type == Type.STR:
-        ip += 1
-        value_token: Token = code[ip]
-        value_name: str = value_token.name
-        if not (value_name.startswith("\"") and value_name.endswith("\"")):
-            print_compiler_error("Invalid value for `const` definition",
-                                 f"{value_token.loc}: Expected string, found `{value_name}`")
-        const_value: str = value_name[1:-1]
+    # elif const_type == Type.STR:
+    #     ip += 1
+    #     value_token: Token = code[ip]
+    #     value_name: str = value_token.name
+    #     if not (value_name.startswith("\"") and value_name.endswith("\"")):
+    #         print_compiler_error("Invalid value for `const` definition",
+    #                              f"{value_token.loc}: Expected string, found `{value_name}`")
+    #     const_value: str = value_name[1:-1]
     else:
         assert False, "Unreachable"
 
@@ -687,7 +707,7 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                 info: KeywordParsingInfo = KeywordParsingInfo(len(instructions), token, None)
                 keyword_stack.append(info)
 
-                word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.STR, value=proc_name))
+                word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.PTR, value=proc_name))
                 op = Instruction(loc=location, word=word)
             elif name == "const":
                 ip, const_unit = parse_constant_block(code, ip, global_memory, constants, procedures)
@@ -712,7 +732,7 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                     info: KeywordParsingInfo = KeywordParsingInfo(len(instructions), token, pre_do)
                     keyword_stack.append(info)
                 elif pre_do_keyword.name == "proc":
-                    word = Operation(operation=OpSet.PREP_PROC, operand=DataTuple(typ=Type.STR, value=current_proc))
+                    word = Operation(operation=OpSet.PREP_PROC, operand=DataTuple(typ=Type.PTR, value=current_proc))
                     info: KeywordParsingInfo = KeywordParsingInfo(len(instructions), token, pre_do)
                     keyword_stack.append(info)
                 else:
@@ -864,9 +884,6 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                         strings.append(include_string)
                     # len - 1 because we don't care about the name
                     assert len(include_program) - 1 == 6, "Not all Program attributes are included in `include` parsing yet"
-                # word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.STR, value="None"))
-                # op = Instruction(loc=location, word=word)
-                # assert False
                 ip += 1
                 continue
             else:
@@ -888,7 +905,7 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                     break
             if not exists:
                 strings.append((lbl, name))
-            word = Operation(operation=OpSet.PUSH_STR, operand=DataTuple(typ=Type.STR, value=lbl))
+            word = Operation(operation=OpSet.PUSH_STR, operand=DataTuple(typ=Type.PTR, value=lbl))
             op = Instruction(loc=location, word=word)
         else:
             is_mem = False
@@ -913,18 +930,18 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                     value = const.content.value
                     if typ == Type.INT:
                         operation = OpSet.PUSH_INT
-                    elif typ == Type.STR:
-                        operation = OpSet.PUSH_STR
-                        exists = False
-                        lbl: str = "str_" + str(PARSE_COUNT) + "_" + str(len(strings))
-                        for l, s in strings:
-                            if s == value:
-                                exists = True
-                                lbl = l
-                                break
-                        if not exists:
-                            strings.append((lbl, value))
-                        value = lbl
+                    # elif typ == Type.STR:
+                    #     operation = OpSet.PUSH_STR
+                    #     exists = False
+                    #     lbl: str = "str_" + str(PARSE_COUNT) + "_" + str(len(strings))
+                    #     for l, s in strings:
+                    #         if s == value:
+                    #             exists = True
+                    #             lbl = l
+                    #             break
+                    #     if not exists:
+                    #         strings.append((lbl, value))
+                    #     value = lbl
                     else:
                         assert False, "This might be a bug in parsing const blocks"
                     word = Operation(operation=operation, operand=DataTuple(typ=typ, value=value))
@@ -974,7 +991,8 @@ def type_check_program(instructions: List[Instruction], procedures: dict[str, Pr
             elif operation == OpSet.PUSH_PTR:
                 stack.append(Type.PTR)
             elif operation == OpSet.PUSH_STR:
-                stack.append(Type.STR)
+                stack.append(Type.INT)
+                stack.append(Type.PTR)
             elif operation == OpSet.DROP:
                 if len(stack) < 1:
                     print_compiler_error("Not enough operands for operation",
@@ -1091,11 +1109,11 @@ def type_check_program(instructions: List[Instruction], procedures: dict[str, Pr
                                          f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}")
                 else:
                     type1 = stack.pop()
-                    if type1 == Type.STR or type1 == Type.PTR:
+                    if type1 == Type.PTR:
                         pass
                     else:
                         print_compiler_error("Wrong types for operation",
-                                             f"{location}: {operation} expected {[Type.STR]}, found {type1} instead.")
+                                             f"{location}: {operation} expected {[Type.PTR]}, found {type1} instead.")
             elif operation == OpSet.PREP_PROC:
                 pass
                 # assert False, f"{operation} type-checking not implemented yet"
@@ -1445,6 +1463,11 @@ def compile_program(program: Program, opt_flags: dict):
                 elif operation == OpSet.PUSH_PTR:
                     output.write(f"  push {operand.value}\n")
                 elif operation == OpSet.PUSH_STR:
+                    for string in strings:
+                        if string[0] == operand.value:
+                            output.write(f"  mov rax, qword {len(string[1])}\n")
+                            output.write(f"  push rax\n")
+                            break
                     output.write(f"  push {operand.value}\n")
                 elif operation == OpSet.ADD_INT or operation == OpSet.ADD_PTR:
                     output.write("  pop rax\n")

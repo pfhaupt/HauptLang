@@ -1,7 +1,8 @@
-memory reverse_buffer 32 end
-memory print_buffer 32 end
+const int buffer_size 32 end
+memory reverse_buffer buffer_size end
+memory print_buffer buffer_size end
 
-proc int-to-str int -> ptr do
+proc int-to-str int -> int ptr do
   # number 0
   0 while over 0 > do
     swap
@@ -25,10 +26,10 @@ proc int-to-str int -> ptr do
 #  dup print_buffer swap ptr+ 13 swap !8
 #  dup 1 + print_buffer swap ptr+ 10 swap !8
   dup 2 + print_buffer swap ptr+ 0 swap !8
-  drop # drop len
+  # drop # drop len
   # reverse_buffer puts
   print_buffer
 end
 
-"Expected: " puts 1234567 puti "\n" puts
-"Procedure: " puts 1234567 int-to-str puts "\n" puts
+"Expected: " puts drop 1234567 puti "\n" puts drop
+"Procedure: " puts drop 1234567 int-to-str puts drop "\n" puts drop

@@ -328,7 +328,10 @@ def get_token_in_line(line: str):
                     parsed_token.append(buffer)
                     buffer = ""
             else:
-                buffer += char
+                if char == COMMENT_CHAR:
+                    break
+                else:
+                    buffer += char
         index += 1
     if inside_str:
         print_compiler_error("Unmatched quotes",
@@ -344,7 +347,7 @@ def load_from_file(file_path: str):
     with open(file_path, "r") as f:
         return [Token(loc=Location(file=file_path, row=row + 1, col=col + 1), name=token)
                 for (row, line) in get_lines(f.readlines())
-                for (col, token) in get_token_in_line(line.split(COMMENT_CHAR)[0])]
+                for (col, token) in get_token_in_line(line)]
 
 
 def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory]):
@@ -464,8 +467,6 @@ def parse_procedure_signature(code: List[Token], ip: int):
 
 
 def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_included_files: List[Token]):
-    if not opt_flags["-m"]:
-        print("[INFO] Parsing " + program_name)
     global PARSE_COUNT
     PARSE_COUNT += 1
     global_memory: List[Memory] = []
@@ -648,6 +649,8 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                         if include_name == included.name:
                             print_compiler_error("File inclusion error",
                                                  f"{location}: Already imported file `{include_name}` here: {included.loc}")
+                    if not opt_flags["-m"]:
+                        print("[INFO] Including " + include_name)
                     included_files.append(Token(loc=include_token.loc, name=include_name))
                     include_program: Program = parse_source_code(include_name, opt_flags, program_name, included_files)
                     include_program.name = include_name
@@ -1545,7 +1548,7 @@ def get_help(flag):
 
 def get_usage(program_name):
     return f"Usage: {program_name} [-h] <input.hpt> " \
-           f"[-c | -d] [-o, -m, -a, -unsafe]\n" \
+           f"[-c | -d] [-o, -m, -a, -r, -unsafe]\n" \
            f"       If you need more help, run `{program_name} -h`"
 
 

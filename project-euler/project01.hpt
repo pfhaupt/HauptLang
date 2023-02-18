@@ -2,19 +2,21 @@ memory int result end
 memory int limit end
 memory int index end
 
-0 result !int
-1000 limit !int
-0 index !int
+proc main do
+  0 result !int
+  1000 limit !int
+  0 index !int
 
-while index ?int limit ?int < do
-    if index ?int 3 % 0 == do
-        result ?int index ?int + result !int
-    else
-        if index ?int 5 % 0 == do
-            result ?int index ?int + result !int
-        end
-    end
-    index ?int 1 + index !int
+  while index ?int limit ?int < do
+      if index ?int 3 % 0 == do
+          result ?int index ?int + result !int
+      else
+          if index ?int 5 % 0 == do
+              result ?int index ?int + result !int
+          end
+      end
+      index ?int 1 + index !int
+  end
+
+  result ?int puti "\n" puts drop
 end
-
-result ?int puti "\n" puts drop

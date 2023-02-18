@@ -1,14 +1,16 @@
 memory int n end
 memory int factor end
 
-600851475143 n !int
-2 factor !int
+proc main do
+  600851475143 n !int
+  2 factor !int
 
-while factor ?int n ?int 1 + < do
-    if n ?int factor ?int % 0 == do
-        n ?int factor ?int / n !int
-        factor ?int puti "\n" puts drop
-    else
-        factor ?int 1 + factor !int
-    end
+  while factor ?int n ?int 1 + < do
+      if n ?int factor ?int % 0 == do
+          n ?int factor ?int / n !int
+          factor ?int puti "\n" puts drop
+      else
+          factor ?int 1 + factor !int
+      end
+  end
 end

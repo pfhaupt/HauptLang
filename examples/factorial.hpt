@@ -2,16 +2,6 @@ memory int n end
 memory int result end
 memory int up_to end
 
-1 n !int
-1 result !int
-20 up_to !int
-
-while n ?int up_to ?int < do
-  result ?int n ?int * result !int
-  result ?int puti "\n" puts drop
-  n ?int 1 + n !int
-end
-
 proc fac int -> int do
   # Calculates n!
   1 while over 1 > do
@@ -22,4 +12,16 @@ proc fac int -> int do
   swap drop
 end
 
-10 fac puti "\n" puts drop
+proc main do
+  1 n !int
+  1 result !int
+  20 up_to !int
+
+  while n ?int up_to ?int < do
+    result ?int n ?int * result !int
+    result ?int puti "\n" puts drop
+    n ?int 1 + n !int
+  end
+
+  10 fac puti "\n" puts drop
+end

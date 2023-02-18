@@ -1,1 +1,1 @@
-"Hello World!\n" puts drop
+proc main do "Hello World!\n" puts drop end

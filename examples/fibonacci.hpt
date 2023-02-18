@@ -4,16 +4,18 @@ memory int fib end
 memory int n end
 memory int up_to end
 
-1 a !int
-0 b !int
-1 fib !int
-0 n !int
-20 up_to !int
+proc main do
+  1 a !int
+  0 b !int
+  1 fib !int
+  0 n !int
+  20 up_to !int
 
-while n ?int up_to ?int < do
-  a ?int b ?int + fib !int
-  b ?int a !int
-  fib ?int b !int
-  fib ?int puti "\n" puts drop
-  n ?int 1 + n !int
+  while n ?int up_to ?int < do
+    a ?int b ?int + fib !int
+    b ?int a !int
+    fib ?int b !int
+    fib ?int puti "\n" puts drop
+    n ?int 1 + n !int
+  end
 end

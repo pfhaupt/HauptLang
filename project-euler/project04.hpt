@@ -6,30 +6,33 @@ memory int tmp end
 memory int reversed end
 memory int remainder end
 
-100 n1 !int
-100 n2 !int
-0 best !int
 
-while n1 ?int 1000 < do
-    100 n2 !int
-    while n2 ?int 1000 < do
-        n1 ?int n2 ?int * n !int
-        n ?int tmp !int
-        0 reversed !int
-        0 remainder !int
-        while tmp ?int 0 != do
-            tmp ?int 10 % remainder !int
-            reversed ?int 10 * remainder ?int + reversed !int
-            tmp ?int 10 / tmp !int
-        end
-        if reversed ?int n ?int == do
-            if reversed ?int best ?int > do
-                reversed ?int best !int
-            end
-        end
-        n2 ?int 1 + n2 !int
-    end
-    n1 ?int 1 + n1 !int
+proc main do
+  100 n1 !int
+  100 n2 !int
+  0 best !int
+
+  while n1 ?int 1000 < do
+      100 n2 !int
+      while n2 ?int 1000 < do
+          n1 ?int n2 ?int * n !int
+          n ?int tmp !int
+          0 reversed !int
+          0 remainder !int
+          while tmp ?int 0 != do
+              tmp ?int 10 % remainder !int
+              reversed ?int 10 * remainder ?int + reversed !int
+              tmp ?int 10 / tmp !int
+          end
+          if reversed ?int n ?int == do
+              if reversed ?int best ?int > do
+                  reversed ?int best !int
+              end
+          end
+          n2 ?int 1 + n2 !int
+      end
+      n1 ?int 1 + n1 !int
+  end
+
+  best ?int puti "\n" puts drop
 end
-
-best ?int puti "\n" puts drop

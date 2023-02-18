@@ -4,37 +4,39 @@ memory int c end
 memory int result end
 memory int running end
 
-0 a !int
-0 b !int
-0 c !int
-0 result !int
-1 running !int
+proc main do
+  0 a !int
+  0 b !int
+  0 c !int
+  0 result !int
+  1 running !int
 
-while running ?int do
-    1 a !int
-    while a ?int 1000 < do
-        1 b !int
-        while b ?int 1000 < do
-            1 c !int
-            while c ?int 1000 < do
-                if  a ?int a ?int *
-                    b ?int b ?int * +
-                    c ?int c ?int * ==
-                    do
-                    if a ?int b ?int c ?int + + 1000 == do
-                        a ?int b ?int c ?int * * result !int
-                        1000 a !int
-                        1000 b !int
-                        1000 c !int
-                        0 running !int
-                    end
-                end
-                c ?int 1 + c !int
-            end
-            b ?int 1 + b !int
-        end
-        a ?int 1 + a !int
-    end
+  while running ?int do
+      1 a !int
+      while a ?int 1000 < do
+          1 b !int
+          while b ?int 1000 < do
+              1 c !int
+              while c ?int 1000 < do
+                  if  a ?int a ?int *
+                      b ?int b ?int * +
+                      c ?int c ?int * ==
+                      do
+                      if a ?int b ?int c ?int + + 1000 == do
+                          a ?int b ?int c ?int * * result !int
+                          1000 a !int
+                          1000 b !int
+                          1000 c !int
+                          0 running !int
+                      end
+                  end
+                  c ?int 1 + c !int
+              end
+              b ?int 1 + b !int
+          end
+          a ?int 1 + a !int
+      end
+  end
+
+  result ?int puti "\n" puts drop
 end
-
-result ?int puti "\n" puts drop

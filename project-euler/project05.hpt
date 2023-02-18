@@ -4,22 +4,24 @@ memory int up_to end
 memory int index end
 memory int count end
 
-1 n !int
-0 done !int
-10 up_to !int
+proc main do
+  1 n !int
+  0 done !int
+  10 up_to !int
 
-while done ?int 0 == do
-    1 index !int
-    1 count !int
-    while index ?int up_to ?int < do
-        if n ?int index ?int % 0 == do
-            count ?int 1 + count !int
-        end
-        index ?int 1 + index !int
-    end
-    if count ?int up_to ?int == do
-        n ?int puti "\n" puts drop
-        1 done !int
-    end
-    n ?int 1 + n !int
+  while done ?int 0 == do
+      1 index !int
+      1 count !int
+      while index ?int up_to ?int < do
+          if n ?int index ?int % 0 == do
+              count ?int 1 + count !int
+          end
+          index ?int 1 + index !int
+      end
+      if count ?int up_to ?int == do
+          n ?int puti "\n" puts drop
+          1 done !int
+      end
+      n ?int 1 + n !int
+  end
 end

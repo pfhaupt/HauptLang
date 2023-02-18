@@ -3,18 +3,20 @@ memory int a end
 memory int b end
 memory int fib end
 
-0 result !int
-1 a !int
-0 b !int
-1 fib !int
+proc main do
+  0 result !int
+  1 a !int
+  0 b !int
+  1 fib !int
 
-while fib ?int 4000000 < do
-    a ?int b ?int + fib !int
-    b ?int a !int
-    fib ?int b !int
-    if fib ?int 2 % 0 == do
-        result ?int fib ?int + result !int
-    end
+  while fib ?int 4000000 < do
+      a ?int b ?int + fib !int
+      b ?int a !int
+      fib ?int b !int
+      if fib ?int 2 % 0 == do
+          result ?int fib ?int + result !int
+      end
+  end
+
+  result ?int puti "\n" puts drop
 end
-
-result ?int puti "\n" puts drop

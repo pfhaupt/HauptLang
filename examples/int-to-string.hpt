@@ -31,5 +31,7 @@ proc int-to-str int -> int byte-ptr do
   print_buffer
 end
 
-"Expected: " puts drop 1234567 puti "\n" puts drop
-"Procedure: " puts drop 1234567 int-to-str puts drop "\n" puts drop
+proc main do
+  "Expected: " puts drop 1234567 puti "\n" puts drop
+  "Procedure: " puts drop 1234567 int-to-str puts drop "\n" puts drop
+end

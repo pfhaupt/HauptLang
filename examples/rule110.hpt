@@ -2,8 +2,6 @@ const int len 32 end
 memory byte buffer len end
 memory byte next_buffer len end
 
-1 cast(byte) len 1 - buffer swap ptr+ !byte
-
 proc display-buffer do
   0 while dup len < do
     dup buffer swap ptr+ ?byte
@@ -50,8 +48,13 @@ proc calculate-step do
   end drop
 end
 
-0 while dup len < do
-  calculate-step
-  display-buffer
-  1 +
-end drop
+proc main do
+  1 cast(byte) len 1 - buffer swap ptr+ !byte
+
+  0 while dup len < do
+    calculate-step
+    display-buffer
+    1 +
+  end drop
+
+end

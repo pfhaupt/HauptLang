@@ -4,28 +4,30 @@ memory int best end
 memory int index end
 memory int chain end
 
-1 n !int
-0 max !int
-0 best !int
+proc main do
+  1 n !int
+  0 max !int
+  0 best !int
 
-1 index !int
-while index ?int 1000000 < do
-    index ?int n !int
-    1 chain !int
-    while n ?int 1 != do
-        if n ?int 2 % 0 == do
-            n ?int 2 / n !int
-        else
-            n ?int 3 * 1 + n !int
-        end
-        chain ?int 1 + chain !int
-    end
-    if chain ?int max ?int > do
-        chain ?int max !int
-        index ?int best !int
-    end
-    index ?int 1 + index !int
+  1 index !int
+  while index ?int 1000000 < do
+      index ?int n !int
+      1 chain !int
+      while n ?int 1 != do
+          if n ?int 2 % 0 == do
+              n ?int 2 / n !int
+          else
+              n ?int 3 * 1 + n !int
+          end
+          chain ?int 1 + chain !int
+      end
+      if chain ?int max ?int > do
+          chain ?int max !int
+          index ?int best !int
+      end
+      index ?int 1 + index !int
+  end
+
+  max ?int puti "\n" puts drop
+  best ?int puti "\n" puts drop
 end
-
-max ?int puti "\n" puts drop
-best ?int puti "\n" puts drop

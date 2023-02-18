@@ -3,17 +3,19 @@ memory int number end
 memory int sum_square end
 memory int sum_number end
 
-100 limit !int
-0 number !int
-0 sum_square !int
-0 sum_number !int
+proc main do
+  100 limit !int
+  0 number !int
+  0 sum_square !int
+  0 sum_number !int
 
-while number ?int limit ?int 1 + < do
-    sum_square ?int number ?int number ?int * + sum_square !int
-    sum_number ?int number ?int + sum_number !int
-    number ?int 1 + number !int
+  while number ?int limit ?int 1 + < do
+      sum_square ?int number ?int number ?int * + sum_square !int
+      sum_number ?int number ?int + sum_number !int
+      number ?int 1 + number !int
+  end
+  sum_number ?int sum_number ?int * sum_number !int
+  sum_square ?int puti "\n" puts drop
+  sum_number ?int puti "\n" puts drop
+  sum_number ?int sum_square ?int - puti "\n" puts drop
 end
-sum_number ?int sum_number ?int * sum_number !int
-sum_square ?int puti "\n" puts drop
-sum_number ?int puti "\n" puts drop
-sum_number ?int sum_square ?int - puti "\n" puts drop

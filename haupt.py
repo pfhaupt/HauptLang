@@ -745,6 +745,7 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
 
     inside_proc: bool = False
     current_proc: str = ""
+    main_found: bool = False
 
     keyword_stack: List[KeywordParsingInfo] = []
 
@@ -758,6 +759,9 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
         name: str = token.name
         op: Instruction = None
         if name in INTRINSIC_LOOKUP:
+            if not inside_proc:
+                print_compiler_error("Unexpected token in Parsing",
+                                     f"{location}: You're not allowed to use operations outside of procedures.")
             # print(f"Found intrinsic {name}")
             word = Operation(operation=INTRINSIC_LOOKUP[name], operand=None)
             op = Instruction(loc=location, word=word)
@@ -794,7 +798,8 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                     print_compiler_error("Unexpected word",
                                          f"{location}: You can't define procedures inside other procedures.")
                 ip, proc_name, proc_signature = parse_procedure_signature(code, ip, global_memory, constants, procedures)
-
+                if proc_name == "main":
+                    main_found = True
                 proc_ip = len(instructions) + 1
                 procedure: Procedure = Procedure(name=proc_name, signature=proc_signature, local_mem=[], mem_size=0,
                                                  start=proc_ip, end=proc_ip, type_checked=False)
@@ -812,6 +817,9 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                 word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=const_unit.content.typ, value=const_unit.content.value))
                 op = Instruction(loc=location, word=word)
             elif name == "while" or name == "if":
+                if not inside_proc:
+                    print_compiler_error("Unexpected token in Parsing",
+                                         f"{location}: You're not allowed to use operations outside of procedures.")
                 info: KeywordParsingInfo = KeywordParsingInfo(len(instructions), token, None)
                 keyword_stack.append(info)
 
@@ -840,6 +848,9 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
 
                 op = Instruction(loc=location, word=word)
             elif name == "else" or name == "elif":
+                if not inside_proc:
+                    print_compiler_error("Unexpected token in Parsing",
+                                         f"{location}: You're not allowed to use operations outside of procedures.")
                 if len(keyword_stack) < 1:
                     print_compiler_error("Lonely ELSE found.",
                                          f"{location}: Could not find matching `do` before this `else`.")
@@ -985,10 +996,16 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                 print_compiler_error("Parsing of keyword token not implemented!",
                                      f"{token} can't be parsed yet.")
         elif (name.startswith("-") and name[1:].isdigit()) or name.isdigit():
+            if not inside_proc:
+                print_compiler_error("Unexpected token in Parsing",
+                                     f"{location}: You're not allowed to use operations outside of procedures.")
             # print(f"Found integer {name}")
             word = Operation(operation=OpSet.PUSH_INT, operand=DataTuple(typ=Type.INT, value=int(name)))
             op = Instruction(loc=location, word=word)
         elif name.startswith("\"") and name.endswith("\""):
+            if not inside_proc:
+                print_compiler_error("Unexpected token in Parsing",
+                                     f"{location}: You're not allowed to use operations outside of procedures.")
             # print(f"Found string {name}")
             name = name[1:-1]
             exists = False
@@ -1003,11 +1020,17 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
             word = Operation(operation=OpSet.PUSH_STR, operand=DataTuple(typ=Type.BYTE_PTR, value=lbl))
             op = Instruction(loc=location, word=word)
         elif name.startswith("\'") and name.endswith("\'"):
+            if not inside_proc:
+                print_compiler_error("Unexpected token in Parsing",
+                                     f"{location}: You're not allowed to use operations outside of procedures.")
             name = name[1:-1]
             assert len(name) == 1
             word = Operation(operation=OpSet.PUSH_CHAR, operand=DataTuple(typ=Type.CHAR, value=ord(name)))
             op = Instruction(loc=location, word=word)
         else:
+            if not inside_proc:
+                print_compiler_error("Unexpected token in Parsing",
+                                     f"{location}: You're not allowed to use operations outside of procedures.")
             is_global_mem = False
             for mem in global_memory:
                 if name == mem.name:
@@ -1075,6 +1098,19 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                                      f"{token} can't be parsed.")
         instructions.append(op)
         ip += 1
+    if inside_proc:
+        assert current_proc is not None, "This might be a bug in parsing"
+        current_proc_loc: Location = instructions[procedures[current_proc].start].loc
+        print_compiler_error("Missing `end` in parsing",
+                             f"{current_proc_loc}: Reached End of File, but never exited current procedure `{current_proc}`.")
+    if main_found:
+        main_ip = procedures["main"].start
+        word = Operation(operation=OpSet.CALL_PROC, operand=DataTuple(typ=Type.INT, value=main_ip))
+        op = Instruction(loc=Location(file=program_name,row=0, col=0), word=word)
+        instructions.append(op)
+    else:
+        print_compiler_error("Could not find `main` procedure",
+                             f"Please make sure to define a main procedure.")
 
     for i, op in enumerate(instructions):
         operation: Operation = op.word.operation
@@ -1579,6 +1615,10 @@ def compile_program(program: Program, opt_flags: dict):
     optimized = opt_flags['-o']
     keep_asm = opt_flags['-a']
     run_program = opt_flags['-r']
+
+    if "main" not in procedures:
+        print_compiler_error("Could not find `main` procedure",
+                             f"Please make sure to define a main procedure.")
 
     name = program_name.replace(".hpt", "")
 

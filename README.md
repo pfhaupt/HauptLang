@@ -55,13 +55,27 @@ Hello World!
 ```
 
 ### Testing
+To use the test script, run the following command:
 ```console
-> python test.py
+> python test.py mode=[build|test|time] file=[all|path] path=[optional]
 ```
-Runs all programs in the [./project-euler/](#project-euler) folder
-and reports the exit code for both compilation and execution.  
-If any program fails, the test stops and displays the error.  
-Useful to see if everything is working as intended.
+#### Modes
+
+The `mode` argument specifies the desired operation mode:
+
+- `build`: generates expected output files for each specified file.
+- `test`: runs specified files and compares output with the expected files.
+- `time`: measures compilation and execution time for each specified file.
+#### Files
+
+The `file` argument specifies which files to test:
+
+- `all`: tests all `.hpt` files in the `./examples/` and `./project-euler/` directories.
+- `path`: allows you to test a specific `.hpt` file by specifying the file path.
+
+#### Path
+
+The `path` argument is optional and should be used to specify the path to a single `.hpt` file that you wish to test. Do not use this argument to specify directories, as it will only work for individual files. It will also be ignored unless you specify `file=path`.
 
 ## Language Support
 **TBD**

@@ -13,7 +13,8 @@ colorama.init()
 COMMENT_CHAR = "#"
 PROC_IO_SEP = "->"
 PARSE_COUNT = -1
-GLOBAL_MEM_CAP = 640_008 # +8 because Null-PTR
+GLOBAL_MEM_CAP = 640_008  # +8 because Null-PTR
+LOCAL_MEM_CAP = 32_000
 
 
 class Type(Enum):
@@ -766,8 +767,10 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                 # print(GLOBAL_MEM_PTR, LOCAL_MEM_PTR)
                 if inside_proc:
                     ip, LOCAL_MEM_PTR, memory_unit = parse_memory_block(code, ip, global_memory, constants, procedures, LOCAL_MEM_PTR)
-                    # print_compiler_error("Local memory is not supported yet",
-                    #                      f"{location}: Unexpected word.")
+                    if LOCAL_MEM_PTR > LOCAL_MEM_CAP:
+                        print_compiler_error("Out of memory",
+                                             f"{location}: Attempted to reserve more memory than available.\n"
+                                             f"You can only use {LOCAL_MEM_CAP} bytes per procedure, but attempted to use {LOCAL_MEM_PTR}.")
                     assert current_proc in procedures, "This might be a bug in parsing"
                     word = Operation(operation=OpSet.NOP,
                                      operand=DataTuple(typ=Type.INT, value=len(procedures[current_proc].local_mem)))

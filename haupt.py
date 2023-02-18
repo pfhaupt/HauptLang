@@ -13,6 +13,7 @@ colorama.init()
 COMMENT_CHAR = "#"
 PROC_IO_SEP = "->"
 PARSE_COUNT = -1
+GLOBAL_MEM_CAP = 640_008 # +8 because Null-PTR
 
 
 class Type(Enum):
@@ -206,10 +207,12 @@ class Instruction:
 class Memory:
     loc: Location
     name: str
-    content: DataTuple
+    typ: Type
+    start: int
+    size: int
 
     def __str__(self):
-        return f"{self.name}: {self.content.typ}"
+        return f"{self.name}: {self.typ} with a start of mem+{self.start} and a size of {self.size}"
 
 
 @dataclass
@@ -405,7 +408,14 @@ def load_from_file(file_path: str):
                 for (col, token) in get_token_in_line(line)]
 
 
-def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory], constants: List[Constant], procedures: dict[str, Procedure]):
+def offset_memory(size: int):
+    global MEM_PTR
+    tmp: int = MEM_PTR
+    MEM_PTR += size
+    return tmp
+
+
+def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory], constants: List[Constant], procedures: dict[str, Procedure], mem_ptr: int):
     # Syntax: memory type name [optional byte_count] end
     if len(code) - ip < 4:
         # we need 4 words for each block
@@ -463,7 +473,10 @@ def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory], 
         memory_size *= 1
     else:
         memory_size *= 8
-    return ip, Memory(loc=memory_location, name=memory_name, content=DataTuple(typ=memory_type, value=memory_size))
+
+    tmp_ptr = mem_ptr
+    mem_ptr += memory_size
+    return ip, mem_ptr, Memory(loc=memory_location, name=memory_name, typ=memory_type, size=memory_size, start=tmp_ptr)
     # Syntax: memory type name [optional byte_count] end
 
     # if len(code) - ip < 4:
@@ -734,6 +747,9 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
 
     keyword_stack: List[KeywordParsingInfo] = []
 
+    GLOBAL_MEM_PTR = 8
+    LOCAL_MEM_PTR = 0
+
     ip = 0
     while ip < len(code):
         token: Token = code[ip]
@@ -747,19 +763,26 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
         elif name in KEYWORD_LOOKUP:
             # print(f"Found keyword {name}")
             if name == "memory":
-                ip, memory_unit = parse_memory_block(code, ip, global_memory, constants, procedures)
+                # print(GLOBAL_MEM_PTR, LOCAL_MEM_PTR)
                 if inside_proc:
-                    print_compiler_error("Local memory is not supported yet",
-                                         f"{location}: Unexpected word.")
+                    ip, LOCAL_MEM_PTR, memory_unit = parse_memory_block(code, ip, global_memory, constants, procedures, LOCAL_MEM_PTR)
+                    # print_compiler_error("Local memory is not supported yet",
+                    #                      f"{location}: Unexpected word.")
                     assert current_proc in procedures, "This might be a bug in parsing"
-                    word = Operation(operation=OpSet.PUSH_LOCAL_MEM,
+                    word = Operation(operation=OpSet.NOP,
                                      operand=DataTuple(typ=Type.INT, value=len(procedures[current_proc].local_mem)))
                     op = Instruction(loc=location, word=word)
 
                     procedures[current_proc].local_mem.append(memory_unit)
                     procedures[current_proc].mem_size += memory_unit.size
                 else:
-                    word = Operation(operation=OpSet.PUSH_GLOBAL_MEM,
+                    LOCAL_MEM_PTR = 0
+                    ip, GLOBAL_MEM_PTR, memory_unit = parse_memory_block(code, ip, global_memory, constants, procedures, GLOBAL_MEM_PTR)
+                    if GLOBAL_MEM_PTR > GLOBAL_MEM_CAP:
+                        print_compiler_error("Out of memory",
+                                             f"{location}: Attempted to reserve more memory than available.\n"
+                                             f"You can only use {GLOBAL_MEM_CAP - 8} bytes, but attempted to use {GLOBAL_MEM_PTR - 8}.")
+                    word = Operation(operation=OpSet.NOP,
                                      operand=DataTuple(typ=Type.INT, value=len(global_memory)))
                     op = Instruction(loc=location, word=word)
                     global_memory.append(memory_unit)
@@ -982,18 +1005,34 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
             word = Operation(operation=OpSet.PUSH_CHAR, operand=DataTuple(typ=Type.CHAR, value=ord(name)))
             op = Instruction(loc=location, word=word)
         else:
-            is_mem = False
+            is_global_mem = False
             for mem in global_memory:
                 if name == mem.name:
-                    if mem.content.typ == Type.INT:
-                        word = Operation(operation=OpSet.PUSH_PTR, operand=DataTuple(typ=Type.INT_PTR, value=name))
-                    elif mem.content.typ == Type.CHAR:
-                        word = Operation(operation=OpSet.PUSH_PTR, operand=DataTuple(typ=Type.BYTE_PTR, value=name))
+                    if mem.typ == Type.INT:
+                        word = Operation(operation=OpSet.PUSH_GLOBAL_MEM, operand=DataTuple(typ=Type.INT_PTR, value=mem.start))
+                    elif mem.typ == Type.CHAR:
+                        word = Operation(operation=OpSet.PUSH_GLOBAL_MEM, operand=DataTuple(typ=Type.BYTE_PTR, value=mem.start))
                     else:
                         assert False, "Unreachable"
                     op = Instruction(loc=location, word=word)
-                    is_mem = True
+                    is_global_mem = True
                     break
+
+            is_local_mem = False
+            if inside_proc:
+                assert current_proc is not None, "This might be a bug in parsing"
+                curr_proc: Procedure = procedures[current_proc]
+                for mem in curr_proc.local_mem:
+                    if name == mem.name:
+                        if mem.typ == Type.INT:
+                            word = Operation(operation=OpSet.PUSH_LOCAL_MEM, operand=DataTuple(typ=Type.INT_PTR, value=mem.start))
+                        elif mem.typ == Type.CHAR:
+                            word = Operation(operation=OpSet.PUSH_LOCAL_MEM, operand=DataTuple(typ=Type.BYTE_PTR, value=mem.start))
+                        else:
+                            assert False, "Unreachable"
+                        op = Instruction(loc=location, word=word)
+                        is_local_mem = True
+                        break
 
             is_proc = False
             if name in procedures:
@@ -1027,7 +1066,8 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                     op = Instruction(loc=location, word=word)
                     is_const = True
                     break
-            if not is_mem and not is_proc and not is_const:
+
+            if not is_global_mem and not is_local_mem and not is_proc and not is_const:
                 print_compiler_error("Unknown Token in Parsing",
                                      f"{token} can't be parsed.")
         instructions.append(op)
@@ -1065,7 +1105,9 @@ def type_check_program(instructions: List[Instruction], procedures: dict[str, Pr
         word: Operation = op.word
         operation: Union[Keyword, OpSet] = word.operation
         if operation in OpSet:
-            if operation == OpSet.PUSH_INT:
+            if operation == OpSet.NOP:
+                pass
+            elif operation == OpSet.PUSH_INT:
                 stack.append(Type.INT)
             elif operation == OpSet.PUSH_CHAR:
                 stack.append(Type.CHAR)
@@ -1284,8 +1326,8 @@ def type_check_program(instructions: List[Instruction], procedures: dict[str, Pr
                         stack.append(out)
                 # pass
                 # assert False, f"{operation} type-checking not implemented yet"
-            elif operation == OpSet.PUSH_GLOBAL_MEM:
-                pass
+            elif operation == OpSet.PUSH_GLOBAL_MEM or operation == OpSet.PUSH_LOCAL_MEM:
+                stack.append(word.operand.typ)
             elif operation == OpSet.CAST_PTR:
                 if len(stack) < 1:
                     print_compiler_error("Not enough operands for operation",
@@ -1534,7 +1576,11 @@ def compile_program(program: Program, opt_flags: dict):
     optimized = opt_flags['-o']
     keep_asm = opt_flags['-a']
     run_program = opt_flags['-r']
+
     name = program_name.replace(".hpt", "")
+
+    last_proc: str = None
+
     label_name = "instr"
     with open(name + ".tmp", "w") as output:
         output.write(f"  ; Generated code for {program_name}\n")
@@ -1546,8 +1592,8 @@ def compile_program(program: Program, opt_flags: dict):
                      "  extern printf\n")
         output.write("\n")
         output.write("main:\n")
-        output.write("    mov rax, ret_stack_end\n")
-        output.write("    mov [ret_stack_rsp], rax\n")
+        output.write("  mov rax, ret_stack_end\n")
+        output.write("  mov [ret_stack_rsp], rax\n")
 
         output.write("  push rbp\n"
                      "  mov rbp, rsp\n"
@@ -1562,7 +1608,9 @@ def compile_program(program: Program, opt_flags: dict):
                     output.write(f"{label_name}_{i}:\n")
             output.write(f"; -- {op} --\n")
             if operation in OpSet:
-                if operation == OpSet.SWAP:
+                if operation == OpSet.NOP:
+                    pass
+                elif operation == OpSet.SWAP:
                     output.write(f"  pop rbx\n")
                     output.write(f"  pop rax\n")
                     output.write(f"  push rbx\n")
@@ -1593,7 +1641,7 @@ def compile_program(program: Program, opt_flags: dict):
                     output.write(f"  mov rax, qword {operand.value}\n")
                     output.write(f"  push rax\n")
                 elif operation == OpSet.PUSH_PTR:
-                    output.write(f"  push {operand.value}\n")
+                    assert False, "This might be a bug in parsing"
                 elif operation == OpSet.PUSH_STR:
                     for string in strings:
                         if string[0] == operand.value:
@@ -1718,18 +1766,27 @@ def compile_program(program: Program, opt_flags: dict):
                     output.write("  mov [ret_stack_rsp], rsp\n")
                     output.write("  mov rsp, rax\n")
                 elif operation == OpSet.PREP_PROC:
-                    output.write("  sub rsp, 32\n")
+                    last_proc = operand.value
+                    n = procedures[last_proc].mem_size
+                    padded = n + (8 - n % 8)
+                    output.write(f"  sub rsp, {padded}\n")
                     output.write("  mov [ret_stack_rsp], rsp\n")
                     output.write("  mov rsp, rax\n")
                 elif operation == OpSet.RET_PROC:
+                    assert last_proc is not None, "This might be a bug in parsing"
+                    n = procedures[last_proc].mem_size
+                    last_proc = None
+                    padded = n + (8 - n % 8)
                     output.write("  mov rax, rsp\n")
                     output.write("  mov rsp, [ret_stack_rsp]\n")
-                    output.write("  add rsp, 32\n")
+                    output.write(f"  add rsp, {padded}\n")
                     output.write("  ret\n")
                 elif operation == OpSet.PUSH_LOCAL_MEM:
-                    assert False, "PUSH_LOCAL_MEM can't be compiled yet"
+                    output.write("  mov rax, [ret_stack_rsp]\n")
+                    output.write(f"  add rax, {operand.value}\n")
+                    output.write("  push rax\n")
                 elif operation == OpSet.PUSH_GLOBAL_MEM:
-                    pass
+                    output.write(f"  push qword mem+{operand.value}\n")
                 elif operation in [OpSet.CAST_PTR, OpSet.CAST_CHAR, OpSet.CAST_INT]:
                     pass
                 else:
@@ -1792,8 +1849,9 @@ def compile_program(program: Program, opt_flags: dict):
         output.write("  ret_stack_rsp resb 8\n")
         output.write("  ret_stack resb 4194304\n")
         output.write("  ret_stack_end resb 8\n")
-        for var in memory:
-            output.write(f"  {var.name} resb {var.content.value}\n")
+        output.write(f"  mem resb {GLOBAL_MEM_CAP}\n")
+        # for var in memory:
+        #     output.write(f"  {var.name} resb {var.content.value}\n")
         output.write("\n")
 
     if not silenced:

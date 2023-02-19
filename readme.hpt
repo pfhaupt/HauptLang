@@ -1,2 +1,4 @@
-42 print
-10 5 + print
+proc main do
+  10 5 + puti "\n" puts drop
+  "Hello World!\n" puts drop
+end

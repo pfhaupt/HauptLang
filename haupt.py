@@ -2016,7 +2016,7 @@ def compile_program(program: Program, opt_flags: dict):
     os.remove(f"{name}.obj")
     if not silenced:
         print(f"[INFO] Removed {name}.obj")
-        print(f"[CMD] Created {name}.exe")
+        print(f"[INFO] Created {name}.exe")
     if run_program:
         call_cmd([f"{name}.exe"], silenced)
     # call_cmd([f"{name}.exe"])

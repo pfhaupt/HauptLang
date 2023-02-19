@@ -38,18 +38,18 @@ So make sure you have both of those tools available in your %PATH%.
 
 ```console
 > readme.hpt
-42 puti
-10 5 + puti
-"Hello World!\n" puts
+proc main do
+  10 5 + puti "\n" puts drop
+  "Hello World!\n" puts drop
+end
 ```
 ```console
 > python haupt.py readme.hpt -c
 [compilation logs]
-[generated readme.exe]
+[INFO] Created ./readme.exe
 ```
 ```console
 > readme.exe
-42
 15
 Hello World!
 ```

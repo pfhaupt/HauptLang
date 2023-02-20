@@ -1,0 +1,40 @@
+# Calculates all primes up to N, in this example 100
+# It does that by running the sieve of Eratosthenes
+
+const int sqrtN 10 end
+const int N sqrtN sqrtN * end
+memory int sieve N end
+
+proc init-sieve do
+  0 while dup N < do
+    sieve over 8 * ptr+ 1 swap !int
+    1 +
+  end drop
+end
+
+proc calc-sieve do
+  2 while dup N < do
+    if sieve over 8 * ptr+ ?int 1 == do
+      dup dup * while dup N < do
+        sieve over 8 * ptr+ 0 swap !int
+        over +
+      end drop
+    end
+    1 +
+  end drop
+end
+
+proc show-sieve do
+  2 while dup N < do
+    if sieve over 8 * ptr+ ?int 1 == do
+      dup puti "\n" puts drop
+    end
+    1 +
+ end drop
+end
+
+proc main do
+  init-sieve
+  calc-sieve
+  show-sieve
+end

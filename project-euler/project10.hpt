@@ -1,0 +1,40 @@
+const int sqrtN 1500 end
+const int N sqrtN sqrtN * end
+memory int sieve N end
+proc init-sieve do
+  0 while dup N < do
+    sieve over 8 * ptr+ 1 swap !int
+    1 +
+  end drop
+end
+
+proc calc-sieve do
+  2 while dup N < do
+    if sieve over 8 * ptr+ ?int 1 == do
+      dup dup * while dup N < do
+        sieve over 8 * ptr+ 0 swap !int
+        over +
+      end drop
+    end
+    1 +
+  end drop
+end
+
+proc get-sum do
+  0
+  2 while dup N < do
+    if dup 2000000 < do
+      if sieve over 8 * ptr+ ?int 1 == do
+        swap over + swap
+      end
+    end
+    1 +
+  end drop
+  puti "\n" puts drop
+end
+
+proc main do
+  init-sieve
+  calc-sieve
+  get-sum
+end

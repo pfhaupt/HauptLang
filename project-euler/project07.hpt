@@ -1,0 +1,53 @@
+const int sqrtN 1000 end
+const int N sqrtN sqrtN * end
+memory int sieve N end
+proc init-sieve do
+  0 while dup N < do
+    sieve over 8 * ptr+ 1 swap !int
+    1 +
+  end drop
+end
+
+proc calc-sieve do
+  2 while dup N < do
+    if sieve over 8 * ptr+ ?int 1 == do
+      dup dup * while dup N < do
+        sieve over 8 * ptr+ 0 swap !int
+        over +
+      end drop
+    end
+    1 +
+  end drop
+end
+
+proc get-prime int do
+  dup
+  2 while dup N < do
+    if sieve over 8 * ptr+ ?int 1 == do
+      swap 1 - swap
+    end
+    swap
+    if dup 0 == do
+      "Prime number " puts drop
+      rot
+      dup puti " is: " puts drop
+      rot
+      dup puti # prints current index
+      "\n" puts drop
+      rot
+      1 -
+    end
+    swap
+    1 +
+ end drop
+ if dup 0 > do
+    "Please increase your N, the goal has not been hit\n" puts drop
+ end
+ drop drop
+end
+
+proc main do
+  init-sieve
+  calc-sieve
+  10001 get-prime
+end

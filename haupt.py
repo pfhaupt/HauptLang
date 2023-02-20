@@ -1793,9 +1793,10 @@ def compile_program(program: Program, opt_flags: dict):
                     output.write("  mov [ret_stack_rsp], rsp\n")
                     output.write("  mov rsp, rax\n")
                 elif operation == OpSet.PREP_PROC:
+                    # TODO: Get local memory working, it sometimes fails for no reason
                     last_proc = operand.value
                     n = procedures[last_proc].mem_size
-                    padded = n + (8 - n % 8) + 8
+                    padded = n + (8 - n % 8)
                     output.write(f"  sub rsp, {padded}\n")
                     output.write("  mov [ret_stack_rsp], rsp\n")
                     output.write("  mov rsp, rax\n")
@@ -1803,7 +1804,7 @@ def compile_program(program: Program, opt_flags: dict):
                     assert last_proc is not None, "This might be a bug in parsing"
                     n = procedures[last_proc].mem_size
                     last_proc = None
-                    padded = n + (8 - n % 8) + 8
+                    padded = n + (8 - n % 8)
                     output.write("  mov rax, rsp\n")
                     output.write("  mov rsp, [ret_stack_rsp]\n")
                     output.write(f"  add rsp, {padded}\n")

@@ -13,8 +13,8 @@ colorama.init()
 COMMENT_CHAR = "#"
 PROC_IO_SEP = "->"
 PARSE_COUNT = -1
-GLOBAL_MEM_CAP = 640_008  # +8 because Null-PTR
-LOCAL_MEM_CAP = 32_000
+GLOBAL_MEM_CAP = 64_000_008  # +8 because Null-PTR
+LOCAL_MEM_CAP = 632_000
 
 
 class Type(Enum):
@@ -204,7 +204,7 @@ class Instruction:
 
     def __str__(self) -> str:
         result: str = "[x]" if self.labelled else "[ ]"
-        return f"{self.ip} " + result + f"{self.loc}: {self.word}"
+        return f"{self.ip} " + result + f" {self.loc}: {self.word}"
 
 
 @dataclass
@@ -1795,7 +1795,7 @@ def compile_program(program: Program, opt_flags: dict):
                 elif operation == OpSet.PREP_PROC:
                     last_proc = operand.value
                     n = procedures[last_proc].mem_size
-                    padded = n + (8 - n % 8)
+                    padded = n + (8 - n % 8) + 8
                     output.write(f"  sub rsp, {padded}\n")
                     output.write("  mov [ret_stack_rsp], rsp\n")
                     output.write("  mov rsp, rax\n")
@@ -1803,7 +1803,7 @@ def compile_program(program: Program, opt_flags: dict):
                     assert last_proc is not None, "This might be a bug in parsing"
                     n = procedures[last_proc].mem_size
                     last_proc = None
-                    padded = n + (8 - n % 8)
+                    padded = n + (8 - n % 8) + 8
                     output.write("  mov rax, rsp\n")
                     output.write("  mov rsp, [ret_stack_rsp]\n")
                     output.write(f"  add rsp, {padded}\n")

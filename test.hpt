@@ -15,4 +15,6 @@ proc test int -> int do
   whatever puts
 end
 
-34 test puti
+proc main do
+  34 test puti
+end

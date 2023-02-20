@@ -13,6 +13,10 @@ colorama.init()
 # Take it with a grain of salt, it has some overhead (~10% from what I've seen)
 
 
+def RUN_CMD(filename):
+    return ["python", "haupt.py", f"{filename}.hpt", "-c", "-o", "-m"]
+
+
 def call_cmd(cmd: List):
     print(Fore.CYAN + "[CMD] " + " ".join(cmd) + Style.RESET_ALL)
     return subprocess.call(cmd)
@@ -21,7 +25,7 @@ def call_cmd(cmd: List):
 def time_output(filename: str):
     print(f"Running {filename}.hpt")
     start_time = time.perf_counter_ns()
-    exitcode = call_cmd(["python", "haupt.py", f"{filename}.hpt", "-c", "-o", "-m"])
+    exitcode = call_cmd(RUN_CMD(filename))
     print(f"Compiling {filename}.hpt exited with exit code " + str(exitcode))
     if exitcode != 0:
         print(Fore.RED + "COMPILATION FAILED: " + filename + Style.RESET_ALL)
@@ -119,7 +123,7 @@ def test_output(filename):
 def get_output(filename):
     text = ""
     try:
-        exit_code = call_cmd(["python", "haupt.py", f"{filename}.hpt", "-c", "-o", "-m"])
+        exit_code = call_cmd(RUN_CMD(filename))
         if exit_code != 0:
             print(f"NON ZERO EXIT CODE {exit_code} in {filename}")
             exit(1)
@@ -160,15 +164,15 @@ def print_error(error: str, program_name: str = "test.py"):
     exit(1)
 
 
-def main():
+def main() -> None:
     print(sys.argv)
     argv = sys.argv
     if len(argv) < 3:
         print_error(f"`{argv[0]}` expects at least 2 arguments, found {len(argv) - 1}")
     program_name, argv = split(argv)
-    mode: str = None
-    file: str = None
-    path: str = None
+    mode: str = ""
+    file: str = ""
+    path: str = ""
     for arg in argv:
         if arg.startswith("mode="):
             mode = arg.split("mode=", 1)[1]
@@ -178,11 +182,11 @@ def main():
             path = arg.split("path=", 1)[1]
             path = path.split(".hpt", 1)[0]
 
-    if mode is None:
+    if mode == "":
         print_error("No mode selected")
-    if file is None:
+    if file == "":
         print_error("No file selected")
-    if file == "path" and path is None:
+    if file == "path" and path == "":
         print_error("No path specified")
     if mode not in ["build", "test", "time"]:
         print_error(f"Unknown mode: {mode}")

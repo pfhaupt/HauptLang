@@ -197,11 +197,14 @@ class Operation:
 
 @dataclass
 class Instruction:
+    ip: int
     loc: Location
     word: Operation
+    labelled: bool
 
-    def __str__(self):
-        return f"{self.loc}: {self.word}"
+    def __str__(self) -> str:
+        result: str = "[x]" if self.labelled else "[ ]"
+        return f"{self.ip} " + result + f"{self.loc}: {self.word}"
 
 
 @dataclass
@@ -237,7 +240,6 @@ class Program:
     procedures: dict[str, Procedure]
     memory: List[Memory]
     strings: List[tuple]
-    labels: List[DataTuple]
     included_files: List[Token]
 
     def __str__(self):
@@ -262,9 +264,6 @@ class Program:
         for s in self.strings:
             result += "  " + str(s) + "\n"
         result += "*" * 25 + "\n"
-        result += "Jump labels: \n"
-        for lbl in self.labels:
-            result += "  " + str(lbl) + "\n"
         return result
 
     def __len__(self):
@@ -330,7 +329,8 @@ def check_string(s):
     return True
 
 
-def check_name_availability(variable: Token, code: List[Token], constants: List[Constant], global_memory: List[Memory], procedures: dict[str, Procedure]):
+def check_name_availability(variable: Token, code: List[Token], constants: List[Constant], global_memory: List[Memory],
+                            procedures: dict[str, Procedure]):
     variable_name: str = variable.name
     if variable_name in TYPES_LOOKUP or variable_name in KEYWORD_LOOKUP or variable_name in INTRINSIC_LOOKUP:
         print_compiler_error("Name conflict.",
@@ -409,14 +409,8 @@ def load_from_file(file_path: str):
                 for (col, token) in get_token_in_line(line)]
 
 
-def offset_memory(size: int):
-    global MEM_PTR
-    tmp: int = MEM_PTR
-    MEM_PTR += size
-    return tmp
-
-
-def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory], constants: List[Constant], procedures: dict[str, Procedure], mem_ptr: int):
+def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory], constants: List[Constant],
+                       procedures: dict[str, Procedure], mem_ptr: int):
     # Syntax: memory type name [optional byte_count] end
     if len(code) - ip < 4:
         # we need 4 words for each block
@@ -554,7 +548,8 @@ def parse_memory_block(code: List[Token], ip: int, global_memory: List[Memory], 
     # return ip, Memory(loc=variable.loc, name=variable_name, content=DataTuple(typ=Type.INT, value=size))
 
 
-def parse_procedure_signature(code: List[Token], ip: int, global_memory: List[Memory], constants: List[Constant], procedures: dict[str, Procedure]):
+def parse_procedure_signature(code: List[Token], ip: int, global_memory: List[Memory], constants: List[Constant],
+                              procedures: dict[str, Procedure]):
     if len(code) - ip < 4:
         # we need *at minimum* 4 words for a valid procedure: proc name do end
         # ip points at number 1
@@ -598,14 +593,15 @@ def parse_procedure_signature(code: List[Token], ip: int, global_memory: List[Me
         if ip >= len(code):
             print_compiler_error("Missing `do` for procedure",
                                  f"{proc_name_token.loc}: Missing `do` for procedure `{proc_name_token.name}`")
-        next_token: Token = code[ip]
+        next_token = code[ip]
 
     proc_signature: Signature = Signature(inputs=inputs, outputs=outputs)
     ip -= 1
     return ip, proc_name, proc_signature
 
 
-def parse_constant_block(code: List[Token], ip: int, global_memory: List[Memory], constants: List[Constant], procedures: dict[str, Procedure]):
+def parse_constant_block(code: List[Token], ip: int, global_memory: List[Memory], constants: List[Constant],
+                         procedures: dict[str, Procedure]):
     if len(code) - ip < 5:
         # we need *at minimum* 5 words for a valid constant: const type name value end
         # ip points at number 1
@@ -639,7 +635,7 @@ def parse_constant_block(code: List[Token], ip: int, global_memory: List[Memory]
     const_name: str = name_name
 
     if const_type == Type.INT:
-        stack = []
+        stack: List[DataTuple] = []
         ip += 1
         next_token: Token = code[ip]
         while next_token.name != "end":
@@ -652,21 +648,21 @@ def parse_constant_block(code: List[Token], ip: int, global_memory: List[Memory]
                                          f"{next_token.loc}: `{next_token.name}` expected 2 operands.")
                 op2 = stack.pop()
                 op1 = stack.pop()
-                stack.append(DataTuple(typ=Type.INT, value=op1.value + op2.value))
+                stack.append(DataTuple(typ=Type.INT, value=int(op1.value) + int(op2.value)))
             elif name == "-":
                 if len(stack) < 2:
                     print_compiler_error("Not enough operands for `const` evaluation",
                                          f"{next_token.loc}: `{next_token.name}` expected 2 operands.")
                 op2 = stack.pop()
                 op1 = stack.pop()
-                stack.append(DataTuple(typ=Type.INT, value=op1.value - op2.value))
+                stack.append(DataTuple(typ=Type.INT, value=int(op1.value) - int(op2.value)))
             elif name == "*":
                 if len(stack) < 2:
                     print_compiler_error("Not enough operands for `const` evaluation",
                                          f"{next_token.loc}: `{next_token.name}` expected 2 operands.")
                 op2 = stack.pop()
                 op1 = stack.pop()
-                stack.append(DataTuple(typ=Type.INT, value=op1.value * op2.value))
+                stack.append(DataTuple(typ=Type.INT, value=int(op1.value) * int(op2.value)))
             elif name == "/":
                 if len(stack) < 2:
                     print_compiler_error("Not enough operands for `const` evaluation",
@@ -676,14 +672,14 @@ def parse_constant_block(code: List[Token], ip: int, global_memory: List[Memory]
                 if op2.value == 0:
                     print_compiler_error("Division by Zero in `const` evaluation",
                                          f"{next_token.loc}: Second operand was Zero.")
-                stack.append(DataTuple(typ=Type.INT, value=int(op1.value / op2.value)))
+                stack.append(DataTuple(typ=Type.INT, value=int(int(op1.value) / int(op2.value))))
             elif name == "%":
                 if len(stack) < 2:
                     print_compiler_error("Not enough operands for `const` evaluation",
                                          f"{next_token.loc}: `{next_token.name}` expected 2 operands.")
                 op2 = stack.pop()
                 op1 = stack.pop()
-                stack.append(DataTuple(typ=Type.INT, value=op1.value % op2.value))
+                stack.append(DataTuple(typ=Type.INT, value=int(op1.value) % int(op2.value)))
             else:
                 is_const = False
                 for const in constants:
@@ -699,7 +695,7 @@ def parse_constant_block(code: List[Token], ip: int, global_memory: List[Memory]
             if ip >= len(code):
                 print_compiler_error("Could not find matching `end` for `const` block.",
                                      f"{next_token.loc}: Expected `end` keyword, reached end of file.")
-            next_token: Token = code[ip]
+            next_token = code[ip]
         if len(stack) > 1:
             print_compiler_error("Too many elements in the stack after `const` evaluation",
                                  f"{next_token.loc}: Expected to have a single element on the stack, got {len(stack)}:\n"
@@ -709,7 +705,7 @@ def parse_constant_block(code: List[Token], ip: int, global_memory: List[Memory]
                                  f"{next_token.loc}: Expected to have a single element on the stack, got {len(stack)}:\n"
                                  f"{stack}")
         value = stack.pop().value
-        const_value: int = value
+        const_value = value
         ip -= 1
     # elif const_type == Type.STR:
     #     ip += 1
@@ -739,7 +735,6 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
     procedures: dict[str, Procedure] = {}
     strings: List[tuple] = []
     instructions: List[Instruction] = []
-    jump_labels: List[DataTuple] = []
     included_files: List[Token] = pre_included_files
     constants: List[Constant] = []
 
@@ -764,13 +759,14 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                                      f"{location}: You're not allowed to use operations outside of procedures.")
             # print(f"Found intrinsic {name}")
             word = Operation(operation=INTRINSIC_LOOKUP[name], operand=None)
-            op = Instruction(loc=location, word=word)
+            op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
         elif name in KEYWORD_LOOKUP:
             # print(f"Found keyword {name}")
             if name == "memory":
                 # print(GLOBAL_MEM_PTR, LOCAL_MEM_PTR)
                 if inside_proc:
-                    ip, LOCAL_MEM_PTR, memory_unit = parse_memory_block(code, ip, global_memory, constants, procedures, LOCAL_MEM_PTR)
+                    ip, LOCAL_MEM_PTR, memory_unit = parse_memory_block(code, ip, global_memory, constants, procedures,
+                                                                        LOCAL_MEM_PTR)
                     if LOCAL_MEM_PTR > LOCAL_MEM_CAP:
                         print_compiler_error("Out of memory",
                                              f"{location}: Attempted to reserve more memory than available.\n"
@@ -778,26 +774,27 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                     assert current_proc in procedures, "This might be a bug in parsing"
                     word = Operation(operation=OpSet.NOP,
                                      operand=DataTuple(typ=Type.INT, value=len(procedures[current_proc].local_mem)))
-                    op = Instruction(loc=location, word=word)
-
+                    op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
                     procedures[current_proc].local_mem.append(memory_unit)
                     procedures[current_proc].mem_size += memory_unit.size
                 else:
                     LOCAL_MEM_PTR = 0
-                    ip, GLOBAL_MEM_PTR, memory_unit = parse_memory_block(code, ip, global_memory, constants, procedures, GLOBAL_MEM_PTR)
+                    ip, GLOBAL_MEM_PTR, memory_unit = parse_memory_block(code, ip, global_memory, constants, procedures,
+                                                                         GLOBAL_MEM_PTR)
                     if GLOBAL_MEM_PTR > GLOBAL_MEM_CAP:
                         print_compiler_error("Out of memory",
                                              f"{location}: Attempted to reserve more memory than available.\n"
                                              f"You can only use {GLOBAL_MEM_CAP - 8} bytes, but attempted to use {GLOBAL_MEM_PTR - 8}.")
                     word = Operation(operation=OpSet.NOP,
                                      operand=DataTuple(typ=Type.INT, value=len(global_memory)))
-                    op = Instruction(loc=location, word=word)
+                    op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
                     global_memory.append(memory_unit)
             elif name == "proc":
                 if inside_proc:
                     print_compiler_error("Unexpected word",
                                          f"{location}: You can't define procedures inside other procedures.")
-                ip, proc_name, proc_signature = parse_procedure_signature(code, ip, global_memory, constants, procedures)
+                ip, proc_name, proc_signature = parse_procedure_signature(code, ip, global_memory, constants,
+                                                                          procedures)
                 if proc_name == "main":
                     main_found = True
                 proc_ip = len(instructions) + 1
@@ -810,12 +807,13 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                 keyword_stack.append(info)
 
                 word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.PROC_PTR, value=proc_name))
-                op = Instruction(loc=location, word=word)
+                op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
             elif name == "const":
                 ip, const_unit = parse_constant_block(code, ip, global_memory, constants, procedures)
                 constants.append(const_unit)
-                word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=const_unit.content.typ, value=const_unit.content.value))
-                op = Instruction(loc=location, word=word)
+                word = Operation(operation=KEYWORD_LOOKUP[name],
+                                 operand=DataTuple(typ=const_unit.content.typ, value=const_unit.content.value))
+                op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
             elif name == "while" or name == "if":
                 if not inside_proc:
                     print_compiler_error("Unexpected token in Parsing",
@@ -824,20 +822,20 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                 keyword_stack.append(info)
 
                 word = Operation(operation=KEYWORD_LOOKUP[name], operand=None)
-                op = Instruction(loc=location, word=word)
+                op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
             elif name == "do":
                 if len(keyword_stack) < 1:
                     print_compiler_error("Lonely DO found.",
                                          f"{location}: Could not find matching if, elif, while or proc before this `do`.")
                 pre_do: KeywordParsingInfo = keyword_stack.pop()
-                pre_do_ip: int = pre_do.ip
                 pre_do_keyword: Token = pre_do.info
                 if pre_do_keyword.name == "while" or pre_do_keyword.name == "if" or pre_do_keyword.name == "elif":
                     word = Operation(operation=KEYWORD_LOOKUP[name], operand=None)
                     info: KeywordParsingInfo = KeywordParsingInfo(len(instructions), token, pre_do)
                     keyword_stack.append(info)
                 elif pre_do_keyword.name == "proc":
-                    word = Operation(operation=OpSet.PREP_PROC, operand=DataTuple(typ=Type.PROC_PTR, value=current_proc))
+                    word = Operation(operation=OpSet.PREP_PROC,
+                                     operand=DataTuple(typ=Type.PROC_PTR, value=current_proc))
                     info: KeywordParsingInfo = KeywordParsingInfo(len(instructions), token, pre_do)
                     keyword_stack.append(info)
                 else:
@@ -846,7 +844,7 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                                          f"{pre_do_keyword.loc}: Expected to be while, if, elif or proc.\n"
                                          f"Found: {pre_do_keyword.name}")
 
-                op = Instruction(loc=location, word=word)
+                op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
             elif name == "else" or name == "elif":
                 if not inside_proc:
                     print_compiler_error("Unexpected token in Parsing",
@@ -864,13 +862,14 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                 if pre_do_token.name == "if":
                     pass
                 elif pre_do_token.name == "elif":
-                    instructions[pre_do_ip].word.operand = DataTuple(typ=Type.INT, value=len(instructions) - pre_do_ip - 1)
+                    instructions[pre_do_ip].word.operand = DataTuple(typ=Type.INT,
+                                                                     value=len(instructions) - pre_do_ip - 1)
                 else:
                     print_compiler_error("Unexpected keyword in parsing",
                                          f"{instructions[pre_do_ip].loc}: Expected to be if.\n"
                                          f"Found: {instructions[pre_do_ip].word}")
                 word = Operation(operation=KEYWORD_LOOKUP[name], operand=None)
-                op = Instruction(loc=location, word=word)
+                op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
                 info: KeywordParsingInfo = KeywordParsingInfo(len(instructions), token, pre_else)
                 keyword_stack.append(info)
             elif name == "end":
@@ -879,12 +878,10 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                                          f"{location}: Could not find matching `do` before this `end`.")
                 pre_end: KeywordParsingInfo = keyword_stack.pop()
                 pre_end_ip: int = pre_end.ip
-                pre_end_token: Token = pre_end.info
                 pre_end_operation: Keyword = instructions[pre_end_ip].word.operation
                 pre_do: KeywordParsingInfo = pre_end.pre_info
                 assert pre_do is not None, "Uhh"
                 pre_do_ip: int = pre_do.ip
-                pre_do_token: Token = pre_do.info
                 pre_do_operation: Keyword = instructions[pre_do_ip].word.operation
 
                 assert pre_end_operation == OpSet.PREP_PROC or pre_end_operation == Keyword.DO or pre_end_operation == Keyword.ELSE, "This might be a bug in the parsing step"
@@ -893,23 +890,23 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                     procedures[current_proc].end = len(instructions)
                     word = Operation(operation=OpSet.RET_PROC,
                                      operand=DataTuple(typ=Type.INT, value=procedures[current_proc].mem_size))
-                    op = Instruction(loc=location, word=word)
+                    op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
                     inside_proc = False
                 elif pre_end_operation == Keyword.DO:
                     instructions[pre_end_ip].word.operand = DataTuple(typ=Type.INT,
                                                                       value=len(instructions) - pre_end_ip)
                     if pre_do_operation == Keyword.IF:
                         word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.INT, value=1))
-                        op = Instruction(loc=location, word=word)
+                        op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
                     elif pre_do_operation == Keyword.ELIF:
                         word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.INT, value=1))
-                        op = Instruction(loc=location, word=word)
+                        op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
                         instructions[pre_do_ip].word.operand = DataTuple(typ=Type.INT,
                                                                          value=len(instructions) - pre_do_ip)
                     elif pre_do_operation == Keyword.WHILE:
                         word = Operation(operation=KEYWORD_LOOKUP[name],
                                          operand=DataTuple(typ=Type.INT, value=pre_do_ip - len(instructions)))
-                        op = Instruction(loc=location, word=word)
+                        op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
                     else:
                         print_compiler_error("Unexpected keyword in parsing",
                                              f"{instructions[pre_do_ip].loc}: Expected to be while or if.\n"
@@ -921,7 +918,7 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                                                                       value=len(instructions) - pre_end_ip)
 
                     word = Operation(operation=KEYWORD_LOOKUP[name], operand=DataTuple(typ=Type.INT, value=1))
-                    op = Instruction(loc=location, word=word)
+                    op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
                 else:
                     assert False, "Unreachable - This is a bug in the parsing step. END will always come after DO or ELSE"
             elif name == "include":
@@ -981,8 +978,6 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                                                      f"{other_loc}: {mem.name} is already defined here: {def_loc}")
 
                         global_memory.append(mem)
-                    # Append the labels
-                    jump_labels.extend(include_program.labels)
                     # Append the strings
                     for include_string in include_program.strings:
                         for existing_string in strings:
@@ -1001,7 +996,7 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                                      f"{location}: You're not allowed to use operations outside of procedures.")
             # print(f"Found integer {name}")
             word = Operation(operation=OpSet.PUSH_INT, operand=DataTuple(typ=Type.INT, value=int(name)))
-            op = Instruction(loc=location, word=word)
+            op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
         elif name.startswith("\"") and name.endswith("\""):
             if not inside_proc:
                 print_compiler_error("Unexpected token in Parsing",
@@ -1009,16 +1004,16 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
             # print(f"Found string {name}")
             name = name[1:-1]
             exists = False
-            lbl: str = "str_" + str(PARSE_COUNT) + "_" + str(len(strings))
-            for l, s in strings:
+            label: str = "str_" + str(PARSE_COUNT) + "_" + str(len(strings))
+            for lbl, s in strings:
                 if s == name:
                     exists = True
-                    lbl = l
+                    label = lbl
                     break
             if not exists:
-                strings.append((lbl, name))
-            word = Operation(operation=OpSet.PUSH_STR, operand=DataTuple(typ=Type.BYTE_PTR, value=lbl))
-            op = Instruction(loc=location, word=word)
+                strings.append((label, name))
+            word = Operation(operation=OpSet.PUSH_STR, operand=DataTuple(typ=Type.BYTE_PTR, value=label))
+            op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
         elif name.startswith("\'") and name.endswith("\'"):
             if not inside_proc:
                 print_compiler_error("Unexpected token in Parsing",
@@ -1026,7 +1021,7 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
             name = name[1:-1]
             assert len(name) == 1
             word = Operation(operation=OpSet.PUSH_CHAR, operand=DataTuple(typ=Type.CHAR, value=ord(name)))
-            op = Instruction(loc=location, word=word)
+            op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
         else:
             if not inside_proc:
                 print_compiler_error("Unexpected token in Parsing",
@@ -1035,12 +1030,14 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
             for mem in global_memory:
                 if name == mem.name:
                     if mem.typ == Type.INT:
-                        word = Operation(operation=OpSet.PUSH_GLOBAL_MEM, operand=DataTuple(typ=Type.INT_PTR, value=mem.start))
+                        word = Operation(operation=OpSet.PUSH_GLOBAL_MEM,
+                                         operand=DataTuple(typ=Type.INT_PTR, value=mem.start))
                     elif mem.typ == Type.CHAR:
-                        word = Operation(operation=OpSet.PUSH_GLOBAL_MEM, operand=DataTuple(typ=Type.BYTE_PTR, value=mem.start))
+                        word = Operation(operation=OpSet.PUSH_GLOBAL_MEM,
+                                         operand=DataTuple(typ=Type.BYTE_PTR, value=mem.start))
                     else:
                         assert False, "Unreachable"
-                    op = Instruction(loc=location, word=word)
+                    op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
                     is_global_mem = True
                     break
 
@@ -1051,12 +1048,14 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                 for mem in curr_proc.local_mem:
                     if name == mem.name:
                         if mem.typ == Type.INT:
-                            word = Operation(operation=OpSet.PUSH_LOCAL_MEM, operand=DataTuple(typ=Type.INT_PTR, value=mem.start))
+                            word = Operation(operation=OpSet.PUSH_LOCAL_MEM,
+                                             operand=DataTuple(typ=Type.INT_PTR, value=mem.start))
                         elif mem.typ == Type.CHAR:
-                            word = Operation(operation=OpSet.PUSH_LOCAL_MEM, operand=DataTuple(typ=Type.BYTE_PTR, value=mem.start))
+                            word = Operation(operation=OpSet.PUSH_LOCAL_MEM,
+                                             operand=DataTuple(typ=Type.BYTE_PTR, value=mem.start))
                         else:
                             assert False, "Unreachable"
-                        op = Instruction(loc=location, word=word)
+                        op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
                         is_local_mem = True
                         break
 
@@ -1064,7 +1063,7 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
             if name in procedures:
                 jmp_ip = procedures[name].start
                 word = Operation(operation=OpSet.CALL_PROC, operand=DataTuple(typ=Type.INT, value=jmp_ip))
-                op = Instruction(loc=location, word=word)
+                op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
                 is_proc = True
 
             is_const = False
@@ -1074,22 +1073,10 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                     value = const.content.value
                     if typ == Type.INT:
                         operation = OpSet.PUSH_INT
-                    # elif typ == Type.STR:
-                    #     operation = OpSet.PUSH_STR
-                    #     exists = False
-                    #     lbl: str = "str_" + str(PARSE_COUNT) + "_" + str(len(strings))
-                    #     for l, s in strings:
-                    #         if s == value:
-                    #             exists = True
-                    #             lbl = l
-                    #             break
-                    #     if not exists:
-                    #         strings.append((lbl, value))
-                    #     value = lbl
                     else:
                         assert False, "This might be a bug in parsing const blocks"
                     word = Operation(operation=operation, operand=DataTuple(typ=typ, value=value))
-                    op = Instruction(loc=location, word=word)
+                    op = Instruction(ip=len(instructions), loc=location, word=word, labelled=False)
                     is_const = True
                     break
 
@@ -1106,7 +1093,7 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
     if main_found:
         main_ip = procedures["main"].start
         word = Operation(operation=OpSet.CALL_PROC, operand=DataTuple(typ=Type.INT, value=main_ip))
-        op = Instruction(loc=Location(file=program_name,row=0, col=0), word=word)
+        op = Instruction(ip=len(instructions), loc=Location(file=program_name, row=0, col=0), word=word, labelled=False)
         instructions.append(op)
     else:
         print_compiler_error("Could not find `main` procedure",
@@ -1116,20 +1103,20 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
         operation: Operation = op.word.operation
         operand: DataTuple = op.word.operand
         if operation in [Keyword.ELSE, Keyword.DO, Keyword.ELIF]:
-            jump_labels.append(DataTuple(typ=Type.INT, value=operand.value + i + 1))
+            instructions[int(operand.value) + i + 1].labelled = True
         elif operation == Keyword.END:
             if operand.value != 1:
-                jump_labels.append(DataTuple(typ=Type.INT, value=operand.value + i + 1))
+                instructions[int(operand.value) + i + 1].labelled = True
 
     for proc in procedures:
+        start_ip: int = procedures[proc].start
+        end_ip: int = procedures[proc].end + 1
+        instructions[start_ip].labelled = True
+        instructions[end_ip].labelled = True
         # print(proc)
-        jump_labels.append(DataTuple(typ=Type.INT, value=procedures[proc].start))
-        jump_labels.append(DataTuple(typ=Type.INT, value=procedures[proc].end + 1))
-    #
-    # for i, lbl in enumerate(jump_labels):
-    #     print(i, lbl)
-    # exit(1)
-    return Program(name=program_name, instructions=instructions, procedures=procedures, memory=global_memory, strings=strings, labels=jump_labels, included_files=included_files)
+
+    return Program(name=program_name, instructions=instructions, procedures=procedures, memory=global_memory,
+                   strings=strings, included_files=included_files)
     # return [parse_op(op) for op in code]
 
 
@@ -1383,13 +1370,13 @@ def type_check_program(instructions: List[Instruction], procedures: dict[str, Pr
                 if len(stack) < 1:
                     print_compiler_error("Not enough operands for operation",
                                          f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}")
-                type1: Type = stack.pop()
+                stack.pop()
                 stack.append(Type.CHAR)
             elif operation == OpSet.CAST_INT:
                 if len(stack) < 1:
                     print_compiler_error("Not enough operands for operation",
                                          f"{location}: {operation} expected 1 argument, found {len(stack)} instead: {stack}")
-                type1: Type = stack.pop()
+                stack.pop()
                 stack.append(Type.INT)
             else:
                 assert False, f"Not implemented type checking for {operation} yet"
@@ -1402,7 +1389,6 @@ def type_check_program(instructions: List[Instruction], procedures: dict[str, Pr
                 keyword_stack.append((ip, operation))
             elif operation == Keyword.DO:
                 pre_do = keyword_stack.pop()
-                pre_do_ip = pre_do[0]
                 pre_do_keyword = pre_do[1]
                 if pre_do_keyword in [Keyword.WHILE, Keyword.IF, Keyword.ELIF]:
                     if len(stack) < 1:
@@ -1525,12 +1511,11 @@ def evaluate_static_equations(instructions: List[Instruction]):
     return instructions
     # optimizes instructions like "10 2 1 3 * 4 5 * + - 2 * 7 - + 5 * 15"
     # by evaluating them in the pre-compiler phase and only pushing the result
-    assert len(OpSet) == 31, "Make sure that `stack_op` in" \
-                             "`evaluate_static_equations()` is up to date."
+    assert len(OpSet) == 35, "Make sure that `stack_op` in `evaluate_static_equations()` is up to date."
     # Last OP in our instruction set that is arithmetic
     # All Enum values less than that are available to be pre-evaluated
-    new_code = []
-    instr_stack = []
+    new_code: List[Instruction] = []
+    instr_stack: List[Instruction] = []
     for op in instructions:
         instr = op.word.operation
         if instr in [OpSet.PUSH_INT, OpSet.ADD_INT, OpSet.SUB_INT, OpSet.MUL_INT, OpSet.DIV_INT, OpSet.MOD_INT]:
@@ -1585,9 +1570,11 @@ def evaluate_static_equations(instructions: List[Instruction]):
                         # print("Result: " + str(result))
                         last_instr = instr_stack[-1]
                         # print(f"Last instruction: {last_instr}")
-                        new_instr = Instruction(loc=last_instr.loc, word=Operation(operation=OpSet.PUSH_INT,
-                                                                                   operand=DataTuple(typ=Type.INT,
-                                                                                                     value=result)))
+                        new_instr = Instruction(ip=last_instr.ip, loc=last_instr.loc,
+                                                word=Operation(operation=OpSet.PUSH_INT,
+                                                               operand=DataTuple(typ=Type.INT,
+                                                                                 value=result)),
+                                                labelled=last_instr.labelled)
                         instr_stack = []
                         # print(f"Sequence breaker: {op}")
                         # print("*********************")
@@ -1608,9 +1595,7 @@ def compile_program(program: Program, opt_flags: dict):
     program_name: str = program.name
     instructions: List[Instruction] = program.instructions
     procedures: dict[str, Procedure] = program.procedures
-    memory: List[Memory] = program.memory
     strings: List[tuple] = program.strings
-    labels: List[DataTuple] = program.labels
     silenced = opt_flags['-m']
     optimized = opt_flags['-o']
     keep_asm = opt_flags['-a']
@@ -1645,10 +1630,9 @@ def compile_program(program: Program, opt_flags: dict):
             location: Location = op.loc
             word: Operation = op.word
             operation: Union[Keyword, OpSet] = word.operation
-            operand: Optional[Type] = word.operand
-            for jmp in labels:
-                if i == jmp.value:
-                    output.write(f"{label_name}_{i}:\n")
+            operand: DataTuple = word.operand
+            if op.labelled:
+                output.write(f"{label_name}_{op.ip}:\n")
             output.write(f"; -- {op} --\n")
             if operation in OpSet:
                 if operation == OpSet.NOP:

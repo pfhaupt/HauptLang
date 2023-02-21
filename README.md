@@ -18,11 +18,11 @@ This project is inspired by [Porth](https://www.youtube.com/watch?v=8QP2fDBIxjM&
 ### haupt.py
 This is the heart of the language.
 Usage:
-> python haupt.py <input.hpt> [-c | -d] [optional flags]
+> python haupt.py input=<input.hpt> [flags]
 
 or
 
-> python haupt.py -h
+> python haupt.py help=all
 
 to show more options.
 
@@ -44,7 +44,7 @@ proc main do
 end
 ```
 ```console
-> python haupt.py readme.hpt -c
+> python haupt.py input=readme.hpt
 [compilation logs]
 [INFO] Created ./readme.exe
 ```

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Dict
 import subprocess
 import sys
 import os
@@ -952,7 +952,7 @@ def parse_instructions(code: List[Token], opt_flags, program_name: str, pre_incl
                     if not opt_flags["-m"]:
                         print("[INFO] Including " + include_name)
                     included_files.append(Token(loc=include_token.loc, name=include_name))
-                    include_program: Program = parse_source_code(include_name, opt_flags, program_name, included_files)
+                    include_program: Program = parse_source_code(include_name, opt_flags, included_files)
                     include_program.name = include_name
                     # print(include_program)
                     # Append all instructions
@@ -1591,15 +1591,15 @@ def evaluate_static_equations(instructions: List[Instruction]):
 # Create Obj file: nasm -f win64 output.asm -o output.obj
 # Link Obj together: golink /no /console /entry main output.obj MSVCRT.dll kernel32.dll
 # Call Program: output.exe
-def compile_program(program: Program, opt_flags: dict):
+def compile_program(program: Program, flags: dict[str, str]):
     program_name: str = program.name
     instructions: List[Instruction] = program.instructions
     procedures: dict[str, Procedure] = program.procedures
     strings: List[tuple] = program.strings
-    silenced = opt_flags['-m']
-    optimized = opt_flags['-o']
-    keep_asm = opt_flags['-a']
-    run_program = opt_flags['-r']
+    silenced = flags["silenced"] == "True"
+    optimized = flags["optimize"]
+    keep_asm = flags["asm"] == "keep"
+    run_program = flags["run"] == "True"
 
     if "main" not in procedures:
         print_compiler_error("Could not find `main` procedure",
@@ -1885,48 +1885,49 @@ def compile_program(program: Program, opt_flags: dict):
     if not silenced:
         print(f"[INFO] Generated {name}.tmp")
 
-    if optimized:
+    if optimized == "all":
         # registers = ["rax", "rbx", "rcx", "rdx", "rbp"]
-        optimized = []
-        not_done = []
+        optimized_op: List[tuple] = []
+        not_done: List[tuple] = []
+        temp_list: List[tuple] = []
         with open(f"{name}.tmp", "r") as unoptimized:
             content = unoptimized.readlines()
             unoptimized_line_count = len(content)
             content = [line.removesuffix("\n") for line in content]
             for i, line in enumerate(content):
                 if line.startswith(";"):
-                    optimized.append((i, line))
+                    optimized_op.append((i, line))
                 else:
                     not_done.append((i, line))
-            content = []
-            for (i, op) in not_done:
-                if not (op.startswith("  push") or op.startswith("  pop")):
-                    optimized.append((i, op))
+            temp_list = []
+            for (i, ope) in not_done:
+                if not (ope.startswith("  push") or ope.startswith("  pop")):
+                    optimized_op.append((i, ope))
                 else:
-                    content.append((i, op))
+                    temp_list.append((i, ope))
 
             not_done = []
-            content.sort(key=lambda tup: tup[0])
-            for i in range(len(content)):
-                index = content[i][0]
-                op = content[i][1]
-                instr = op.strip(" ").split(" ")
+            temp_list.sort(key=lambda tup: tup[0])
+            for i in range(len(temp_list)):
+                index: int = temp_list[i][0]
+                oper = temp_list[i][1]
+                instr = oper.strip(" ").split(" ")
                 if instr[0] != "push" and instr[0] != "pop":
-                    optimized.append((index, op))
+                    optimized_op.append((index, oper))
                 else:
-                    not_done.append((index, op))
+                    not_done.append((index, oper))
 
-            index = 0
-            while index < len(not_done):
-                curr_line = not_done[index]
-                if index >= len(not_done) - 1:
-                    optimized.append((curr_line[0], curr_line[1]))
-                    index += 1
+            index_2: int = 0
+            while index_2 < len(not_done):
+                curr_line = not_done[index_2]
+                if index_2 >= len(not_done) - 1:
+                    optimized_op.append((curr_line[0], curr_line[1]))
+                    index_2 += 1
                 else:
-                    next_line = not_done[index + 1]
-                    curr_line_index = curr_line[0]
-                    next_line_index = next_line[0]
-                    if next_line_index == curr_line_index + 2:
+                    next_line = not_done[index_2 + 1]
+                    curr_line_index_2 = curr_line[0]
+                    next_line_index_2 = next_line[0]
+                    if next_line_index_2 == curr_line_index_2 + 2:
                         curr_line_instr = curr_line[1].strip(" ")
                         next_line_instr = next_line[1].strip(" ")
                         if curr_line_instr.startswith("push") and next_line_instr.startswith("pop"):
@@ -1937,18 +1938,18 @@ def compile_program(program: Program, opt_flags: dict):
                                 # useless OP
                                 pass
                             else:
-                                optimized.append((curr_line_index, curr_line[1]))
-                                optimized.append((next_line_index, next_line[1]))
-                            index += 2
+                                optimized_op.append((curr_line_index_2, curr_line[1]))
+                                optimized_op.append((next_line_index_2, next_line[1]))
+                            index_2 += 2
                         else:
-                            optimized.append((curr_line_index, curr_line[1]))
-                            optimized.append((next_line_index, next_line[1]))
-                            index += 2
+                            optimized_op.append((curr_line_index_2, curr_line[1]))
+                            optimized_op.append((next_line_index_2, next_line[1]))
+                            index_2 += 2
                     else:
-                        optimized.append((curr_line_index, curr_line[1]))
-                        index += 1
+                        optimized_op.append((curr_line_index_2, curr_line[1]))
+                        index_2 += 1
 
-        optimized.sort(key=lambda tup: tup[0])
+        optimized_op.sort(key=lambda tup: tup[0])
 
         # Replaces:
         #   ; -- (<OpSet.PUSH: 2>, value) --
@@ -1974,12 +1975,12 @@ def compile_program(program: Program, opt_flags: dict):
         #  push qword [var_name]
         # TODO: Add this optimization
 
-        optimized_line_count = len(optimized)
+        optimized_line_count = len(optimized_op)
         if not silenced:
             print(f"[INFO] Removed {unoptimized_line_count - optimized_line_count} "
                   f"lines of ASM due to optimization.")
         with open(f"{name}.asm", "w") as output:
-            for (i, op) in optimized:
+            for (i, op) in optimized_op:
                 output.write(op + "\n")
     else:
         with open(f"{name}.tmp", "r") as code:
@@ -2007,106 +2008,175 @@ def compile_program(program: Program, opt_flags: dict):
     # call_cmd([f"{name}.exe"])
 
 
-def shift(argv):
-    return argv[0], argv[1:]
-
-
-def get_help(flag):
-    match flag:
-        case '-h':
-            return "Shows this help screen."
-        case '-c':
-            return "Compiles the given input code and generates a single executable."
-        case '-d':
-            return "Debug Mode: Parses the input code, prints the instructions, then exits."
-        case '-o':
-            return "Optimize the generated code. Only works in combination with `-c`."
-        case '-m':
-            return "Mutes compilation command line output."
-        case '-a':
-            return "Keeps generated Assembly file after compilation."
-        case '-r':
-            return "Runs the program after compilation."
-        case '-unsafe':
-            return "Disables type checking."
-        case _:
-            return "[No description]"
-
-
 def get_usage(program_name):
     return f"Usage: {program_name} [-h] <input.hpt> " \
            f"[-c | -d] [-o, -m, -a, -r, -unsafe]\n" \
            f"       If you need more help, run `{program_name} -h`"
 
 
+@dataclass
+class Flag:
+    name: str
+    modes: List[str]
+    selected: int = 0  # index to modes
+
+
+supported_flags: List[Flag] = [
+    Flag(name="mode", modes=["compile", "debug"]),
+    Flag(name="warn", modes=["none", "all"]),
+    Flag(name="optimize", modes=["none", "all"]),
+    Flag(name="input", modes=["file"]),
+    Flag(name="run", modes=["False", "True"]),
+    Flag(name="typed", modes=["True", "False"]),
+    Flag(name="silenced", modes=["False", "True"]),
+    Flag(name="asm", modes=["discard", "keep"])
+]
+
+
+def show_help(cmd: str):
+    help_string = ""
+    match cmd:
+        case "flags":
+            help_string = "  Supported flags:\n"
+            for flag in supported_flags:
+                modes = "|".join(flag.modes)
+                modes = "[" + modes + "]"
+                flag_line: str = f" - {flag.name}:".ljust(12)
+                help_string += f"  {flag_line} {modes}\n"
+            help_string += "  The first element for any flag is always the default."
+        case "mode":
+            help_string = "  Supported modes:\n" \
+                          "   - compile: Compiles the given input file into a x86_64 executable.\n" \
+                          "   - debug:   Parses the given input file like compilation,\n" \
+                          "              prints out the intermediate bytecode, then exits.\n" \
+                          "  Default is: compile."
+        case "warn":
+            help_string = "  Supported warnings:\n" \
+                          "  All warnings are TODOs, the compiler currently does not warn anything, it just prints errors.\n" \
+                          "   - all:  Enables all warnings, such as local memory with shadow names or unused procedures.\n" \
+                          "   - none: Do not show any warnings.\n" \
+                          "  Default is: none."
+        case "optimize":
+            help_string = "  Supported optimizations:\n" \
+                          "   - all:  Enables all optimizations, such as dead code elimination\n" \
+                          "           and improved Assembly code generation.\n" \
+                          "   - none: Do not perform any optimizations.\n" \
+                          "  Default is: none."
+        case "input":
+            help_string = "  Specifies the file that you want to compile.\n" \
+                          "  Please make sure that the filepath is correct and that the filename ends with `.hpt`."
+        case "typed":
+            help_string = "  Enable or disable type checking.\n" \
+                          "  Default is: True."
+        case "silenced":
+            help_string = "  Enable or disable command line output for the compiler.\n" \
+                          "  If set to True, it will not display any messages tagged [INFO] or [CMD].\n" \
+                          "  Default is: False."
+        case "run":
+            help_string = "  Enable or disable automatic code execution.\n" \
+                          "  If set to True, it will automatically run the generated executable.\n" \
+                          "  Default is: False."
+        case "asm":
+            help_string = "  Keep or discard the generated assembly file. Useful for debugging.\n" \
+                          "  Default is: discard."
+        case "all":
+            print("Showing all valid flags and modes.\n")
+            for flag in supported_flags:
+                show_help(flag.name)
+            exit(0)
+        case _:
+            for flag in supported_flags:
+                if cmd == flag.name:
+                    print_compiler_error("If this fails, that means that the flag does exist, but has no help-text yet.")
+            print_compiler_error(f"Unknown flag `{cmd}`",
+                                 "  Can't show help.")
+    help_string = f"Flag `{cmd}`:\n" + help_string + "\n"
+    print(help_string)
+
+
+def parse_flags(argv: List[str]) -> Dict[str, str]:
+    program_name: str = argv[0]
+    argv = argv[1:]
+    found_input: bool = False
+    input_name: str = ""
+    for arg in argv:
+        arg_split: List[str] = arg.split("=")
+        if len(arg_split) != 2:
+            print_compiler_error(f"Unknown flag `{arg}`",
+                                 "  All flags follow the form `flag=mode`")
+        arg_flag: str = arg.split("=", 1)[0]
+        arg_mode: str = arg.split("=", 1)[1]
+        valid_flag: bool = False
+        if arg_flag == "input":
+            found_input = True
+            input_name = arg_mode
+        elif arg_flag == "help":
+            show_help(arg_mode)
+            exit(0)
+        else:
+            for flag in supported_flags:
+                if arg_flag == flag.name:
+                    valid_mode: bool = False
+                    for i, mode in enumerate(flag.modes):
+                        if arg_mode == mode:
+                            flag.selected = i
+                            valid_mode = True
+                            break
+                    if not valid_mode:
+                        print_compiler_error(f"Unknown mode `{arg_mode}` for argument `{arg_flag}`",
+                                             f"  Run `python haupt.py help={arg_flag}` for supported modes.")
+
+                    valid_flag = True
+                    break
+            if not valid_flag:
+                print_compiler_error(f"Unknown flag `{arg_flag}`",
+                                     "  Run `python haupt.py help=flags` for supported flags.")
+    if not found_input:
+        print_compiler_error("No input specified!",
+                             "Please specify the input file with `input=file`.")
+    used_flags: Dict[str, str] = {}
+    for flag in supported_flags:
+        used_flags[flag.name] = flag.modes[flag.selected]
+    used_flags["input"] = input_name
+    used_flags["program"] = program_name
+    return used_flags
+
+
 def main():
-    flags = ['-h', '-c', '-d', '-o', '-m', '-a', '-r', '-unsafe']
-    exec_flags = flags[1:3]
-    optional_flags = flags[3:]
-    opt_flags = dict(zip(optional_flags, [False] * len(optional_flags)))
-    program_name, sys.argv = shift(sys.argv)
+    flags: dict[str, str] = parse_flags(sys.argv)
+    program_name = flags["program"]
     program_name = program_name.split("\\")[-1]
-    if len(sys.argv) < 1:
-        print_compiler_error("Not enough parameters!",
-                             f"{get_usage(program_name)}\n")
-    if sys.argv[0] == '-h':
-        print(get_usage(program_name))
-        print("Supported flags:")
-        for flag in flags:
-            print(f"    {flag}: " + get_help(flag))
-        exit(0)
-    if len(sys.argv) < 2:
-        print_compiler_error("Not enough parameters!",
-                             f"{get_usage(program_name)}\n")
-    input_file, sys.argv = shift(sys.argv)
+    input_file = flags["input"]
     if not input_file.startswith("./"):
         input_file = "./" + input_file
     if not input_file.endswith(".hpt"):
         print_compiler_error(f"File {input_file} does not end with `.hpt`!",
-                             get_usage(program_name))
+                             "Aborting Compilation!")
 
-    run_flag, sys.argv = shift(sys.argv)
-    if run_flag not in exec_flags:
-        print_compiler_error("Third Parameter has to be an execution flag!",
-                             get_usage(program_name))
+    run_flag = flags["mode"]
 
-    if len(sys.argv) > 0:
-        opt_args = sys.argv
-        for opt in opt_args:
-            if opt not in optional_flags:
-                print_compiler_error("Unknown Flag",
-                                     f"Found `{opt}`. For valid flags run `{program_name} -h`")
-            else:
-                opt_flags[opt] = True
+    main_program: Program = parse_source_code(input_file, flags, program_name)
 
-    main_program: Program = parse_source_code(input_file, opt_flags, program_name)
-
-    if run_flag == '-c':
-        compile_program(main_program, opt_flags)
-    elif run_flag == '-d':
+    if run_flag == "compile":
+        compile_program(main_program, flags)
+    elif run_flag == "debug":
         for i, mem in enumerate(main_program.memory):
             print(mem)
         print("*" * 50)
         for i, op in enumerate(main_program.instructions):
             print(i, op.word)
-        exit(1)
-    else:
-        print(f"Unknown flag `{run_flag}`")
-        print(get_usage(program_name))
-        exit(1)
 
 
-def parse_source_code(input_file, opt_flags, program_name, included_files=None):
+def parse_source_code(input_file: str, flags: dict[str, str], included_files=None):
     if included_files is None:
         included_files = []
     code: List[Token] = []
     try:
         code = load_from_file(input_file)
     except FileNotFoundError:
-        print_compiler_error(f"File `{input_file} does not exist!",
-                             get_usage(program_name))
-    main_program: Program = parse_instructions(code, opt_flags, input_file, included_files)
-    if not opt_flags['-unsafe']:
+        print_compiler_error(f"File `{input_file}` does not exist!")
+    main_program: Program = parse_instructions(code, flags, input_file, included_files)
+    if flags["typed"] == "True":
         type_check_program(instructions=main_program.instructions, procedures=main_program.procedures)
     main_program.instructions = evaluate_static_equations(instructions=main_program.instructions)
 

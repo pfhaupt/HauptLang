@@ -14,7 +14,7 @@ colorama.init()
 
 
 def RUN_CMD(filename):
-    return ["python", "haupt.py", f"{filename}.hpt", "-c", "-o", "-m"]
+    return ["python", "haupt.py", f"input={filename}.hpt", "optimize=all", "silenced=True"]
 
 
 def call_cmd(cmd: List):

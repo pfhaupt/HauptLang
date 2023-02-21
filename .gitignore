@@ -6,3 +6,5 @@
 /.idea/
 test.hpt
 *-output.txt
+/.mypy_cache/
+/__pycache__/
